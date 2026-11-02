@@ -1,0 +1,30 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../features/habits/presentation/today_page.dart';
+import '../features/settings/settings_providers.dart';
+
+class HabitApp extends ConsumerWidget {
+  const HabitApp({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(themeModeProvider).value ?? ThemeMode.system;
+
+    return MaterialApp(
+      title: '習慣追蹤',
+      themeMode: mode,
+      theme: ThemeData(
+        colorSchemeSeed: Colors.green,
+        useMaterial3: true,
+        brightness: Brightness.light,
+      ),
+      darkTheme: ThemeData(
+        colorSchemeSeed: Colors.green,
+        useMaterial3: true,
+        brightness: Brightness.dark,
+      ),
+      // 其他設定(locale、localizationsDelegates 等)保留你原本的
+      home: const TodayPage(),
+    );
+  }
+}
