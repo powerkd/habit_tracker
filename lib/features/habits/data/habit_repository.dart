@@ -2,7 +2,49 @@ import 'package:sqflite/sqflite.dart';
 import '../domain/habit.dart';
 import 'habit_database.dart';
 
+/// 刪除前的快照,供「復原」使用
+class DeletedHabitSnapshot {
+  final Map<String, Object?> habit;
+  final List<Map<String, Object?>> logs;
+  const DeletedHabitSnapshot(this.habit, this.logs);
+}
+
+
 class HabitRepository {
+  /// 刪除習慣與打卡紀錄,並回傳快照供復原
+  Future<DeletedHabitSnapshot?> deleteHabitWithSnapshot(int id) async {
+    final db = await HabitDatabase.instance;
+    final rows =
+        await db.query('habits', where: 'id = ?', whereArgs: [id], limit: 1);
+    if (rows.isEmpty) return null;
+    final logs =
+        await db.query('habit_logs', where: 'habit_id = ?', whereArgs: [id]);
+
+    await db.transaction((txn) async {
+      await txn.delete('habit_logs', where: 'habit_id = ?', whereArgs: [id]);
+      await txn.delete('habits', where: 'id = ?', whereArgs: [id]);
+    });
+
+    return DeletedHabitSnapshot(
+      Map<String, Object?>.of(rows.first),
+      logs.map((e) => Map<String, Object?>.of(e)).toList(),
+    );
+  }
+
+  /// 用快照還原(保留原本的 id,提醒的通知 id 也會一致)
+  Future<void> restoreSnapshot(DeletedHabitSnapshot s) async {
+    final db = await HabitDatabase.instance;
+    await db.transaction((txn) async {
+      await txn.insert('habits', s.habit,
+          conflictAlgorithm: ConflictAlgorithm.replace);
+      final batch = txn.batch();
+      for (final row in s.logs) {
+        batch.insert('habit_logs', row,
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
+  }
   Future<List<Habit>> getActiveHabits() async {
     final db = await HabitDatabase.instance;
     final rows = await db.query(

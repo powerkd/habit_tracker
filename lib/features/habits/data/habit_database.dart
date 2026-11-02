@@ -42,13 +42,11 @@ class HabitDatabase {
       onUpgrade: (db, oldVersion, newVersion) async {
         // 從 1 升級：兩個欄位都沒有
         if (oldVersion < 2) {
-          await db.execute(
-              'ALTER TABLE habits ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
-          await db.execute('UPDATE habits SET sort_order = id');
-        }
-        // 從 2 升級：只缺 remind_time
-        if (oldVersion < 3) {
-          await db.execute('ALTER TABLE habits ADD COLUMN remind_time TEXT');
+          final columns = await db.rawQuery("PRAGMA table_info(habits)");
+          final hasremindTime = columns.any((c) => c['name'] == 'remind_time');
+          if (!hasremindTime) {
+            await db.execute('ALTER TABLE habits ADD COLUMN remind_time TEXT');
+          }
         }
       },
     );

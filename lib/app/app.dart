@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/habits/presentation/today_page.dart';
 import '../features/settings/settings_providers.dart';
+import '../core/app_navigator.dart';
 
 class HabitApp extends ConsumerWidget {
   const HabitApp({super.key});
@@ -11,6 +12,7 @@ class HabitApp extends ConsumerWidget {
     final mode = ref.watch(themeModeProvider).value ?? ThemeMode.system;
 
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: '習慣追蹤',
       themeMode: mode,
       theme: ThemeData(

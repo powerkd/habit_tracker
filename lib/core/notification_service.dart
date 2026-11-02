@@ -1,10 +1,12 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 import '../features/habits/domain/habit.dart';
+import '../features/habits/presentation/habit_detail_page.dart';
+import 'app_navigator.dart';
 
 class NotificationService {
   NotificationService._();
@@ -32,8 +34,32 @@ class NotificationService {
         requestSoundPermission: false,
       ),
     );
-    await _plugin.initialize(settings: settings);
+
+    await _plugin.initialize(
+      settings: settings,
+      onDidReceiveNotificationResponse: (response) {
+        _openHabit(response.payload);
+      },
+    );
     _ready = true;
+
+    // app 被完全關閉時，點通知啟動的情況
+    final launch = await _plugin.getNotificationAppLaunchDetails();
+    if (launch?.didNotificationLaunchApp == true) {
+      final payload = launch!.notificationResponse?.payload;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openHabit(payload));
+    }
+  }
+
+  /// 點通知後開啟對應習慣的詳情頁
+  void _openHabit(String? payload) {
+    final id = int.tryParse(payload ?? '');
+    if (id == null) return;
+    navigatorKey.currentState?.push(
+      MaterialPageRoute(
+        builder: (_) => HabitDetailPage(habitId: id),
+      ),
+    );
   }
 
   /// 設定提醒時呼叫，會跳出系統授權視窗。回傳是否已授權。
@@ -44,8 +70,8 @@ class NotificationService {
     final ios = _plugin.resolvePlatformSpecificImplementation<
         IOSFlutterLocalNotificationsPlugin>();
     final a = await android?.requestNotificationsPermission();
-    final i = await ios?.requestPermissions(
-        alert: true, badge: true, sound: true);
+    final i =
+        await ios?.requestPermissions(alert: true, badge: true, sound: true);
     return (a ?? i ?? true);
   }
 
@@ -66,14 +92,15 @@ class NotificationService {
     final minute = int.parse(parts[1]);
 
     final now = tz.TZDateTime.now(tz.local);
-    var when = tz.TZDateTime(
-        tz.local, now.year, now.month, now.day, hour, minute);
+    var when =
+        tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute);
     if (when.isBefore(now)) when = when.add(const Duration(days: 1));
 
     await _plugin.zonedSchedule(
       id: id,
       title: '該打卡囉',
       body: name,
+      payload: id.toString(),
       scheduledDate: when,
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(

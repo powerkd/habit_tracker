@@ -32,7 +32,17 @@ class TodayNotifier extends AsyncNotifier<List<HabitItem>> {
   HabitRepository get _repo => ref.read(habitRepositoryProvider);
 
   @override
-  Future<List<HabitItem>> build() => _load();
+    Future<List<HabitItem>> build() async {
+      final items = await _load();
+      _syncNotifications(items.map((e) => e.habit).toList());
+      return items;
+    }
+
+    /// 重排提醒:失敗不應影響主要功能
+    void _syncNotifications(List<Habit> habits) {
+      NotificationService.instance.syncAll(habits).catchError((_) {});
+    }
+
 
   Future<List<HabitItem>> _load() async {
     final now = DateTime.now();
@@ -57,11 +67,6 @@ class TodayNotifier extends AsyncNotifier<List<HabitItem>> {
     ref.invalidate(habitDetailProvider);
     ref.invalidate(archivedProvider);
     await future;
-    // 重排提醒:失敗不應影響主要功能
-    try {
-      final habits = await _repo.getActiveHabits();
-      await NotificationService.instance.syncAll(habits);
-    } catch (_) {}
   }
 
   Future<void> add({
@@ -130,12 +135,23 @@ class TodayNotifier extends AsyncNotifier<List<HabitItem>> {
   Future<void> reorder(int oldIndex, int newIndex) async {
     final items = [...(state.value ?? <HabitItem>[])];
     if (oldIndex < 0 || oldIndex >= items.length) return;
-    if (newIndex > oldIndex) newIndex -= 1;
     final moved = items.removeAt(oldIndex);
     items.insert(newIndex, moved);
     state = AsyncData(items);
     await _repo.updateOrder(items.map((e) => e.habit.id!).toList());
   }
+
+  Future<DeletedHabitSnapshot?> deleteWithSnapshot(int id) async {
+  final snap = await _repo.deleteHabitWithSnapshot(id);
+  await _reload();
+  return snap;
+  }
+
+  Future<void> restoreDeleted(DeletedHabitSnapshot snap) async {
+    await _repo.restoreSnapshot(snap);
+    await _reload();
+  }
+
 
   Future<void> refresh() => _reload();
 }

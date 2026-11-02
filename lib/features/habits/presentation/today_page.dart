@@ -122,8 +122,36 @@ class _TodayPageState extends ConsumerState<TodayPage>
         error: (e, _) => Center(child: Text('載入失敗：$e')),
         data: (items) {
           if (items.isEmpty) {
-            return const Center(
-              child: Text('還沒有習慣\n點右下角開始建立第一個吧'),
+            final theme = Theme.of(context);
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.checklist_rounded,
+                        size: 72,
+                        color: theme.colorScheme.primary.withValues(alpha: 0.5)),
+                    const SizedBox(height: 16),
+                    Text('還沒有任何習慣', style: theme.textTheme.titleLarge),
+                    const SizedBox(height: 8),
+                    Text(
+                      '從一個小習慣開始,\n每天打卡,累積連續天數。',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 24),
+                    FilledButton.icon(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const HabitFormPage()),
+                      ),
+                      icon: const Icon(Icons.add),
+                      label: const Text('新增第一個習慣'),
+                    ),
+                  ],
+                ),
+              ),
             );
           }
           final done = items.where((i) => i.doneToday).length;
