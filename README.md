@@ -1,17 +1,23 @@
-# habit_tracker
+# Habit Tracker
 
-A new Flutter project.
+極簡習慣追蹤器,使用 Flutter 開發。
 
-## Getting Started
+## 功能
+- 新增、編輯、封存習慣
+- 每日打卡與補打
+- 目前與最長連續天數
+- 月曆詳情頁
+- 每日提醒通知
+- 拖曳排序
 
-This project is a starting point for a Flutter application.
+## 技術
+Flutter、Riverpod、SQLite (sqflite)、table_calendar、flutter_local_notifications
 
-A few resources to get you started if this is your first Flutter project:
+## 執行
+```bash
+flutter pub get
+flutter run
+```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 授權
+MIT
