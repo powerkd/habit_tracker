@@ -18,6 +18,8 @@ class TodayPage extends ConsumerStatefulWidget {
 
 class _TodayPageState extends ConsumerState<TodayPage>
     with WidgetsBindingObserver {
+  bool _celebrating = false;
+
   String get dateText {
     final now = DateTime.now();
     return '${now.year}年${now.month}月${now.day}日';
@@ -58,48 +60,64 @@ class _TodayPageState extends ConsumerState<TodayPage>
   }
 
   /// 全部完成時的慶祝動畫
+  /// 只用路由本身的動畫（淡入＋縮放），計時器放在外面，避免重建時重複 pop
   Future<void> _celebrate() async {
+    if (_celebrating) return;
+    _celebrating = true;
     HapticFeedback.heavyImpact();
-    showGeneralDialog(
+
+    final reduce = MediaQuery.disableAnimationsOf(context);
+    final nav = Navigator.of(context, rootNavigator: true);
+    var open = true;
+
+    Future.delayed(const Duration(milliseconds: 1600), () {
+      if (open && mounted && nav.canPop()) nav.pop();
+    });
+
+    await showGeneralDialog(
       context: context,
       barrierDismissible: true,
       barrierLabel: '慶祝',
       barrierColor: Colors.black38,
-      transitionDuration: const Duration(milliseconds: 200),
-      pageBuilder: (ctx, _, _) {
-        Future.delayed(const Duration(milliseconds: 1600), () {
-          if (ctx.mounted && Navigator.of(ctx).canPop()) {
-            Navigator.of(ctx).pop();
-          }
-        });
-        return Center(
-          child: Material(
-            color: Colors.transparent,
-            child: TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0.3, end: 1.0),
-              duration: const Duration(milliseconds: 600),
-              curve: Curves.elasticOut,
-              builder: (_, scale, child) =>
-                  Transform.scale(scale: scale, child: child),
-              child: const GlassContainer(
-                borderRadius: BorderRadius.all(Radius.circular(28)),
-                padding: EdgeInsets.all(32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('🎉', style: TextStyle(fontSize: 64)),
-                    SizedBox(height: 8),
-                    Text('今天全部完成！',
-                        style: TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-              ),
+      transitionDuration:
+          reduce ? Duration.zero : const Duration(milliseconds: 380),
+      pageBuilder: (ctx, _, _) => const Center(
+        child: Material(
+          color: Colors.transparent,
+          child: GlassContainer(
+            borderRadius: BorderRadius.all(Radius.circular(28)),
+            padding: EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('🎉', style: TextStyle(fontSize: 64)),
+                SizedBox(height: 8),
+                Text('今天全部完成！',
+                    style:
+                        TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              ],
             ),
+          ),
+        ),
+      ),
+      transitionBuilder: (ctx, anim, _, child) {
+        final curved = CurvedAnimation(
+          parent: anim,
+          curve: Curves.easeOutBack,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return FadeTransition(
+          opacity: anim,
+          child: ScaleTransition(
+            scale: Tween(begin: 0.85, end: 1.0).animate(curved),
+            child: child,
           ),
         );
       },
     );
+
+    open = false;
+    _celebrating = false;
   }
 
   @override
@@ -117,21 +135,23 @@ class _TodayPageState extends ConsumerState<TodayPage>
       if (!wasAll && nowAll) _celebrate();
     });
 
-    return Scaffold(
+    return GlassScaffold(
       body: Stack(
         children: [
           SafeArea(
             bottom: false,
             child: async.when(
-              loading: () =>
-                  const Center(child: CircularProgressIndicator()),
+              // 重新載入時保留舊資料，不閃轉圈
+              skipLoadingOnReload: true,
+              skipLoadingOnRefresh: true,
+              loading: () => const SizedBox.shrink(),
               error: (e, _) => Center(child: Text('載入失敗：$e')),
               data: (all) => _buildContent(context, all),
             ),
           ),
           Positioned(
             right: 20,
-            bottom: MediaQuery.of(context).padding.bottom + 20,
+            bottom: MediaQuery.paddingOf(context).bottom + 20,
             child: GlassIconButton(
               icon: Icons.add_rounded,
               semanticLabel: '新增習慣',
@@ -175,6 +195,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
                 ),
               ),
               GlassIconButton(
+                blur: null, // 在清單裡捲動，不做即時模糊
                 icon: Icons.settings_outlined,
                 semanticLabel: '設定',
                 onPressed: _openSettings,
@@ -277,6 +298,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
             top: 8,
             right: 20,
             child: GlassIconButton(
+              blur: null,
               icon: Icons.settings_outlined,
               semanticLabel: '設定',
               onPressed: _openSettings,
@@ -289,8 +311,23 @@ class _TodayPageState extends ConsumerState<TodayPage>
     final done = scheduled.where((i) => i.doneToday).length;
 
     return ReorderableListView.builder(
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
       header: _buildHeader(theme, scheduled, done),
+      // 拖曳時輕微放大，取代預設的陰影
+      proxyDecorator: (child, index, anim) => AnimatedBuilder(
+        animation: anim,
+        builder: (ctx, c) {
+          final t = Curves.easeOutCubic.transform(anim.value);
+          return Transform.scale(
+            scale: 1 + 0.03 * t,
+            child: Material(type: MaterialType.transparency, child: c),
+          );
+        },
+        child: child,
+      ),
       footer: resting.isEmpty
           ? null
           : Column(
@@ -323,76 +360,149 @@ class _TodayPageState extends ConsumerState<TodayPage>
   }
 }
 
-class _HabitCard extends ConsumerWidget {
+class _HabitCard extends ConsumerStatefulWidget {
   final HabitItem item;
   final bool resting;
   const _HabitCard({super.key, required this.item, this.resting = false});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_HabitCard> createState() => _HabitCardState();
+}
+
+class _HabitCardState extends ConsumerState<_HabitCard> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    final resting = widget.resting;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final color = Color(item.habit.colorValue);
     final done = item.doneToday;
-    final scheme = Theme.of(context).colorScheme;
-    final reduce = MediaQuery.of(context).disableAnimations;
+    final reduce = MediaQuery.disableAnimationsOf(context);
 
-    return Opacity(
-      opacity: resting ? 0.5 : 1.0,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
+    final titleColor =
+        resting ? scheme.onSurface.withValues(alpha: 0.5) : scheme.onSurface;
+    final subColor =
+        scheme.onSurfaceVariant.withValues(alpha: resting ? 0.6 : 1.0);
+    final status = resting
+        ? '今天休息'
+        : done
+            ? '已完成'
+            : '未完成';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: AnimatedScale(
+        scale: _down ? 0.98 : 1,
+        duration: reduce ? Duration.zero : const Duration(milliseconds: 120),
         curve: Curves.easeOutCubic,
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: done ? color.withValues(alpha: 0.15) : scheme.surface,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color:
-                done ? color : scheme.outlineVariant.withValues(alpha: 0.5),
-            width: done ? 1.5 : 0.5,
+        child: AnimatedContainer(
+          duration:
+              reduce ? Duration.zero : const Duration(milliseconds: 250),
+          curve: Curves.easeOutCubic,
+          decoration: BoxDecoration(
+            color: done && !resting
+                ? color.withValues(alpha: 0.16)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(24),
           ),
-        ),
-        child: ListTile(
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => HabitDetailPage(habitId: item.habit.id!),
-            ),
-          ),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          leading: CircleAvatar(
-            backgroundColor: color.withValues(alpha: 0.15),
-            child: Icon(iconFor(item.habit.iconKey), color: color),
-          ),
-          title: Text(item.habit.name,
-              maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(
-            resting
-                ? '今天休息 · 🔥 連續 ${item.currentStreak} 天'
-                : '🔥 連續 ${item.currentStreak} 天 · ${done ? "已完成" : "未完成"}',
-          ),
-          trailing: IconButton(
-            tooltip: done ? '取消完成' : '標記完成',
-            icon: AnimatedSwitcher(
-              duration:
-                  reduce ? Duration.zero : const Duration(milliseconds: 320),
-              transitionBuilder: (child, anim) => ScaleTransition(
-                scale: CurvedAnimation(
-                    parent: anim, curve: Curves.easeOutBack),
-                child: child,
+          child: GlassContainer(
+            borderRadius: BorderRadius.circular(24),
+            padding: EdgeInsets.zero,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(24),
+                onHighlightChanged: (v) => setState(() => _down = v),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => HabitDetailPage(habitId: item.habit.id!),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color:
+                              color.withValues(alpha: resting ? 0.08 : 0.18),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Icon(
+                          iconFor(item.habit.iconKey),
+                          color:
+                              resting ? color.withValues(alpha: 0.5) : color,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.habit.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleMedium
+                                  ?.copyWith(color: titleColor),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '🔥 ${item.currentStreak} 天 · $status',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium
+                                  ?.copyWith(color: subColor, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: IconButton(
+                          tooltip: done ? '取消完成' : '標記完成',
+                          icon: AnimatedSwitcher(
+                            duration: reduce
+                                ? Duration.zero
+                                : const Duration(milliseconds: 320),
+                            transitionBuilder: (child, anim) =>
+                                ScaleTransition(
+                              scale: CurvedAnimation(
+                                  parent: anim, curve: Curves.easeOutBack),
+                              child: child,
+                            ),
+                            child: Icon(
+                              done
+                                  ? Icons.check_circle
+                                  : Icons.circle_outlined,
+                              key: ValueKey(done),
+                              size: 32,
+                              color: done
+                                  ? color
+                                  : scheme.outline
+                                      .withValues(alpha: resting ? 0.5 : 1.0),
+                            ),
+                          ),
+                          onPressed: () {
+                            HapticFeedback.lightImpact();
+                            ref
+                                .read(todayProvider.notifier)
+                                .toggle(item.habit.id!, item.doneToday);
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              child: Icon(
-                done ? Icons.check_circle : Icons.circle_outlined,
-                key: ValueKey(done),
-                color: done ? color : scheme.outline,
-                size: 32,
-              ),
             ),
-            onPressed: () {
-              HapticFeedback.lightImpact();
-              ref
-                  .read(todayProvider.notifier)
-                  .toggle(item.habit.id!, item.doneToday);
-            },
           ),
         ),
       ),

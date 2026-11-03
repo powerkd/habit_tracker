@@ -18,6 +18,7 @@ class HabitFormPage extends ConsumerStatefulWidget {
 
 class _HabitFormPageState extends ConsumerState<HabitFormPage> {
   final _formKey = GlobalKey<FormState>();
+  final _nameFocus = FocusNode();
   late final TextEditingController _name;
   late final TextEditingController _desc;
   late String _iconKey;
@@ -25,10 +26,29 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
   late int _weekdays;
   String? _remindTime; // "HH:mm"；null 代表不提醒
   bool _saving = false;
+  bool _focusScheduled = false;
 
   bool get _isEdit => widget.habit != null;
 
   @override
+    void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_isEdit || _focusScheduled) return;
+    _focusScheduled = true;
+
+    final anim = ModalRoute.of(context)?.animation;
+    if (anim == null || anim.isCompleted) {
+      _nameFocus.requestFocus();
+      return;
+    }
+    void listener(AnimationStatus s) {
+      if (s == AnimationStatus.completed) {
+        anim.removeStatusListener(listener);
+        if (mounted) _nameFocus.requestFocus();
+      }
+    }
+    anim.addStatusListener(listener);
+  }
   void initState() {
     super.initState();
     final h = widget.habit;
@@ -43,6 +63,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
   @override
   void dispose() {
     _name.dispose();
+    _nameFocus.dispose();
     _desc.dispose();
     super.dispose();
   }
@@ -160,7 +181,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
     final onColor =
         color.computeLuminance() > 0.6 ? Colors.black87 : Colors.white;
 
-    return Scaffold(
+    return GlassScaffold(
       appBar: AppBar(title: Text(_isEdit ? '編輯習慣' : '新增習慣')),
       body: Form(
         key: _formKey,
@@ -175,7 +196,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                   TextFormField(
                     controller: _name,
                     maxLength: 30,
-                    autofocus: !_isEdit,
+                    focusNode: _nameFocus,
                     decoration: _dec('習慣名稱', hint: '例如：閱讀 15 分鐘'),
                     validator: (v) => (v == null || v.trim().isEmpty)
                         ? '請輸入習慣名稱'

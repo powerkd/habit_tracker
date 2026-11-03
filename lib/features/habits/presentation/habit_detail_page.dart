@@ -52,9 +52,13 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
     final async = ref.watch(habitDetailProvider(widget.habitId));
 
     return async.when(
-      loading: () =>
-          const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Scaffold(
+      skipLoadingOnReload: true,
+      skipLoadingOnRefresh: true,
+      loading: () => GlassScaffold(
+          appBar: AppBar(),
+          body: const SizedBox.shrink(),
+    ),
+      error: (e, _) => GlassScaffold(
           appBar: AppBar(), body: Center(child: Text('載入失敗：$e'))),
       data: (d) {
         final theme = Theme.of(context);
@@ -86,7 +90,7 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
 
         final schedule = weekdaysLabel(habit.weekdays);
 
-        return Scaffold(
+        return GlassScaffold(
           appBar: AppBar(
             title: Text(habit.name, overflow: TextOverflow.ellipsis),
             actions: [

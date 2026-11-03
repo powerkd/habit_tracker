@@ -100,7 +100,7 @@ class SettingsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final mode = ref.watch(themeModeProvider).value ?? ThemeMode.system;
 
-    return Scaffold(
+    return GlassScaffold(
       appBar: AppBar(title: const Text('設定')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),

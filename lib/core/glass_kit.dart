@@ -104,13 +104,15 @@ class _Glow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: [color, color.withValues(alpha: 0)],
+    return RepaintBoundary(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(
+            colors: [color, color.withValues(alpha: 0)],
+          ),
         ),
       ),
     );
@@ -118,18 +120,20 @@ class _Glow extends StatelessWidget {
 }
 
 /// 玻璃材質容器
+/// blur 為 null（預設）時不做即時模糊，只用半透明填色加高光邊框，效能接近零成本。
+/// 只有浮在內容上方的元件（按鈕、彈窗）才傳入 blur。
 class GlassContainer extends StatelessWidget {
   final Widget child;
   final BorderRadius borderRadius;
   final EdgeInsetsGeometry padding;
-  final double blur;
+  final double? blur;
 
   const GlassContainer({
     super.key,
     required this.child,
     this.borderRadius = const BorderRadius.all(Radius.circular(28)),
     this.padding = const EdgeInsets.all(12),
-    this.blur = 24,
+    this.blur,
   });
 
   Radius _inner(Radius r) => Radius.circular(max(0.0, r.x - 1));
@@ -137,9 +141,13 @@ class GlassContainer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final reduce = MediaQuery.of(context).disableAnimations;
+    final reduce = MediaQuery.disableAnimationsOf(context);
+    final useBlur = blur != null && !reduce;
 
-    final fill = Colors.white.withValues(alpha: dark ? 0.08 : 0.55);
+    // 沒有模糊時,填色稍微不透明,避免背景光暈影響文字可讀性
+    final fill = dark
+        ? Colors.white.withValues(alpha: useBlur ? 0.08 : 0.07)
+        : Colors.white.withValues(alpha: useBlur ? 0.55 : 0.72);
     final hiA = Colors.white.withValues(alpha: dark ? 0.25 : 0.8);
     final hiB = Colors.white.withValues(alpha: dark ? 0.04 : 0.15);
     final solid = dark ? const Color(0xFF1E252E) : Colors.white;
@@ -171,14 +179,17 @@ class GlassContainer extends StatelessWidget {
       ),
     );
 
-    return ClipRRect(
-      borderRadius: borderRadius,
-      child: reduce
-          ? content
-          : BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-              child: content,
-            ),
+    // 沒有模糊就不需要 ClipRRect,少一次裁切
+    if (!useBlur) return RepaintBoundary(child: content);
+
+    return RepaintBoundary(
+      child: ClipRRect(
+        borderRadius: borderRadius,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: blur!, sigmaY: blur!),
+          child: content,
+        ),
+      ),
     );
   }
 }
@@ -188,11 +199,14 @@ class GlassIconButton extends StatefulWidget {
   final IconData icon;
   final VoidCallback onPressed;
   final String semanticLabel;
+  final double? blur;
+
   const GlassIconButton({
     super.key,
     required this.icon,
     required this.onPressed,
     required this.semanticLabel,
+    this.blur = 16,
   });
 
   @override
@@ -208,6 +222,7 @@ class _GlassIconButtonState extends State<GlassIconButton> {
     return Semantics(
       button: true,
       label: widget.semanticLabel,
+      excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapDown: (_) => setState(() => _down = true),
@@ -222,6 +237,7 @@ class _GlassIconButtonState extends State<GlassIconButton> {
           duration: const Duration(milliseconds: 120),
           curve: Curves.easeOutCubic,
           child: GlassContainer(
+            blur: widget.blur,
             borderRadius: BorderRadius.circular(28),
             padding: EdgeInsets.zero,
             child: SizedBox(
@@ -231,6 +247,26 @@ class _GlassIconButtonState extends State<GlassIconButton> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 自帶背景的 Scaffold。背景在 Scaffold 外層，連 AppBar 區域都不透明,
+/// 所以頁面轉場時不會透出前一頁。
+class GlassScaffold extends StatelessWidget {
+  final PreferredSizeWidget? appBar;
+  final Widget body;
+
+  const GlassScaffold({super.key, this.appBar, required this.body});
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: appBar,
+        body: body,
       ),
     );
   }
