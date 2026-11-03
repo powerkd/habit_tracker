@@ -49,6 +49,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
     }
     anim.addStatusListener(listener);
   }
+  @override
   void initState() {
     super.initState();
     final h = widget.habit;

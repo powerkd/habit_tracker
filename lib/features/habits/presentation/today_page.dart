@@ -1,3 +1,4 @@
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,6 +20,8 @@ class TodayPage extends ConsumerStatefulWidget {
 class _TodayPageState extends ConsumerState<TodayPage>
     with WidgetsBindingObserver {
   bool _celebrating = false;
+  final _scroll = ScrollController();
+  final _offset = ValueNotifier<double>(0);
 
   String get dateText {
     final now = DateTime.now();
@@ -29,11 +32,16 @@ class _TodayPageState extends ConsumerState<TodayPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _scroll.addListener(() {
+      _offset.value = _scroll.hasClients ? _scroll.offset : 0;
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _scroll.dispose();
+    _offset.dispose();
     super.dispose();
   }
 
@@ -60,7 +68,6 @@ class _TodayPageState extends ConsumerState<TodayPage>
   }
 
   /// 全部完成時的慶祝動畫
-  /// 只用路由本身的動畫（淡入＋縮放），計時器放在外面，避免重建時重複 pop
   Future<void> _celebrate() async {
     if (_celebrating) return;
     _celebrating = true;
@@ -124,7 +131,6 @@ class _TodayPageState extends ConsumerState<TodayPage>
   Widget build(BuildContext context) {
     final async = ref.watch(todayProvider);
 
-    // 只在「從未全部完成」變成「全部完成」的那一刻觸發
     ref.listen(todayProvider, (prev, next) {
       final wd = DateTime.now().weekday;
       final before = prev?.value?.where((e) => e.habit.runsOn(wd)).toList();
@@ -141,7 +147,6 @@ class _TodayPageState extends ConsumerState<TodayPage>
           SafeArea(
             bottom: false,
             child: async.when(
-              // 重新載入時保留舊資料，不閃轉圈
               skipLoadingOnReload: true,
               skipLoadingOnRefresh: true,
               loading: () => const SizedBox.shrink(),
@@ -149,16 +154,69 @@ class _TodayPageState extends ConsumerState<TodayPage>
               data: (all) => _buildContent(context, all),
             ),
           ),
-          Positioned(
-            right: 20,
-            bottom: MediaQuery.paddingOf(context).bottom + 20,
-            child: GlassIconButton(
-              icon: Icons.add_rounded,
-              semanticLabel: '新增習慣',
-              onPressed: _openForm,
+          _buildMiniBar(context),
+          // 空狀態中央已有「新增第一個習慣」，不重複顯示膠囊
+          if (async.value?.isNotEmpty ?? false)
+            Positioned(
+              right: 20,
+              bottom: MediaQuery.paddingOf(context).bottom + 20,
+              child: GlassPill(
+                icon: Icons.add_rounded,
+                label: '新增習慣',
+                onPressed: _openForm,
+              ),
             ),
-          ),
         ],
+      ),
+    );
+  }
+
+  /// 捲動超過大標題後，從頂部淡入的迷你標題列
+  Widget _buildMiniBar(BuildContext context) {
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    final top = MediaQuery.paddingOf(context).top;
+
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: ValueListenableBuilder<double>(
+        valueListenable: _offset,
+        builder: (context, offset, _) {
+          final t = ((offset - 50) / 40).clamp(0.0, 1.0);
+          if (t == 0) return const SizedBox.shrink();
+
+          return IgnorePointer(
+            child: Opacity(
+              opacity: t,
+              child: ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                  child: Container(
+                    height: top + 48,
+                    padding: EdgeInsets.only(top: top),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: (dark
+                              ? const Color(0xFF0B0F14)
+                              : const Color(0xFFF4F6F8))
+                          .withValues(alpha: 0.8),
+                      border: Border(
+                        bottom: BorderSide(
+                          color: (dark ? Colors.white : Colors.black)
+                              .withValues(alpha: 0.08),
+                          width: 0.5,
+                        ),
+                      ),
+                    ),
+                    child: Text('今天', style: theme.textTheme.titleMedium),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -195,7 +253,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
                 ),
               ),
               GlassIconButton(
-                blur: null, // 在清單裡捲動，不做即時模糊
+                blur: null,
                 icon: Icons.settings_outlined,
                 semanticLabel: '設定',
                 onPressed: _openSettings,
@@ -262,7 +320,6 @@ class _TodayPageState extends ConsumerState<TodayPage>
     final scheduled = all.where((i) => i.habit.runsOn(wd)).toList();
     final resting = all.where((i) => !i.habit.runsOn(wd)).toList();
 
-    // 空狀態：仍保留設定入口（設定頁有備份匯入）
     if (all.isEmpty) {
       return Stack(
         children: [
@@ -311,12 +368,12 @@ class _TodayPageState extends ConsumerState<TodayPage>
     final done = scheduled.where((i) => i.doneToday).length;
 
     return ReorderableListView.builder(
+      scrollController: _scroll,
       physics: const BouncingScrollPhysics(
         parent: AlwaysScrollableScrollPhysics(),
       ),
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
       header: _buildHeader(theme, scheduled, done),
-      // 拖曳時輕微放大，取代預設的陰影
       proxyDecorator: (child, index, anim) => AnimatedBuilder(
         animation: anim,
         builder: (ctx, c) {
