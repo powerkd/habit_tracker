@@ -1,4 +1,7 @@
 class Habit {
+  /// 每天都做的遮罩(週一到週日全選)
+  static const int allDays = 127;
+
   final int? id;
   final String name;
   final String? description;
@@ -8,6 +11,7 @@ class Habit {
   final bool isArchived;
   final int sortOrder;
   final String? remindTime; // "HH:mm";null 代表不提醒
+  final int weekdays; // 位元遮罩:bit0=週一 … bit6=週日
 
   const Habit({
     this.id,
@@ -19,7 +23,14 @@ class Habit {
     this.isArchived = false,
     this.sortOrder = 0,
     this.remindTime,
+    this.weekdays = allDays,
   });
+
+  /// [weekday] 使用 DateTime.weekday:週一=1 … 週日=7
+  bool runsOn(int weekday) => (weekdays & (1 << (weekday - 1))) != 0;
+
+  /// 是否每天都做
+  bool get isEveryDay => (weekdays & allDays) == allDays;
 
   Habit copyWith({
     String? name,
@@ -29,6 +40,7 @@ class Habit {
     int? sortOrder,
     String? remindTime,
     bool clearRemindTime = false,
+    int? weekdays,
   }) =>
       Habit(
         id: id,
@@ -40,6 +52,7 @@ class Habit {
         isArchived: isArchived,
         sortOrder: sortOrder ?? this.sortOrder,
         remindTime: clearRemindTime ? null : (remindTime ?? this.remindTime),
+        weekdays: weekdays ?? this.weekdays,
       );
 
   Map<String, Object?> toMap() => {
@@ -52,6 +65,7 @@ class Habit {
         'is_archived': isArchived ? 1 : 0,
         'sort_order': sortOrder,
         'remind_time': remindTime,
+        'weekdays': weekdays,
       };
 
   factory Habit.fromMap(Map<String, Object?> map) => Habit(
@@ -64,5 +78,6 @@ class Habit {
         isArchived: (map['is_archived'] as int) == 1,
         sortOrder: map['sort_order'] as int,
         remindTime: map['remind_time'] as String?,
+        weekdays: (map['weekdays'] as int?) ?? allDays,
       );
 }

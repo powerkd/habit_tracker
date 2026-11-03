@@ -90,6 +90,7 @@ class HabitRepository {
         'icon_key': habit.iconKey,
         'color_value': habit.colorValue,
         'remind_time': habit.remindTime, // 新增;null 代表清除提醒
+        'weekdays': habit.weekdays,
       },
       where: 'id = ?',
       whereArgs: [habit.id],

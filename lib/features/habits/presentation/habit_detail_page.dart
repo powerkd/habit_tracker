@@ -7,6 +7,7 @@ import '../domain/habit_style.dart';
 import '../domain/streak_calculator.dart';
 import 'habit_form_page.dart';
 import 'habit_providers.dart';
+import '../domain/weekday_utils.dart';
 
 class HabitDetailPage extends ConsumerStatefulWidget {
   final int habitId;
@@ -103,12 +104,12 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          habit.description ?? '每天一次',
+                          habit.description ?? weekdaysLabel(habit.weekdays),
                           style: Theme.of(context).textTheme.bodyLarge,
                         ),
                         if (habit.remindTime != null) ...[
                           const SizedBox(height: 4),
-                          Text('⏰ 每天 ${habit.remindTime} 提醒',
+                          Text('⏰ 每天 ${weekdaysLabel(habit.weekdays)} ${habit.remindTime} 提醒',
                               style: Theme.of(context).textTheme.bodySmall),
                         ],
                       ],
@@ -176,17 +177,20 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
                       day: day,
                       color: color,
                       done: d.completedKeys.contains(toDateKey(day)),
+                      scheduled: weekdayRuns(habit.weekdays, day.weekday),
                     ),
                     todayBuilder: (ctx, day, _) => _DayCell(
                       day: day,
                       color: color,
                       done: d.completedKeys.contains(toDateKey(day)),
+                      scheduled: weekdayRuns(habit.weekdays, day.weekday),
                       isToday: true,
                     ),
                     selectedBuilder: (ctx, day, _) => _DayCell(
                       day: day,
                       color: color,
                       done: d.completedKeys.contains(toDateKey(day)),
+                      scheduled: weekdayRuns(habit.weekdays, day.weekday),
                       isToday: isSameDay(day, today),
                       isSelected: true,
                     ),
@@ -259,6 +263,7 @@ class _DayCell extends StatelessWidget {
   final DateTime day;
   final Color color;
   final bool done;
+  final bool scheduled;
   final bool isToday;
   final bool isSelected;
 
@@ -266,12 +271,16 @@ class _DayCell extends StatelessWidget {
     required this.day,
     required this.color,
     required this.done,
+    this.scheduled = true,
     this.isToday = false,
     this.isSelected = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    // 非排程日淡化;但如果那天有打卡,仍維持上色
+    final dim = !scheduled && !done;
     return Container(
       margin: const EdgeInsets.all(5),
       alignment: Alignment.center,
@@ -279,8 +288,7 @@ class _DayCell extends StatelessWidget {
         shape: BoxShape.circle,
         color: done ? color : null,
         border: isSelected
-            ? Border.all(
-                color: Theme.of(context).colorScheme.onSurface, width: 2)
+            ? Border.all(color: onSurface, width: 2)
             : isToday
                 ? Border.all(color: color, width: 2)
                 : null,
@@ -288,10 +296,15 @@ class _DayCell extends StatelessWidget {
       child: Text(
         '${day.day}',
         style: TextStyle(
-          color: done ? Colors.white : Theme.of(context).colorScheme.onSurface,
+          color: done
+              ? Colors.white
+              : dim
+                  ? onSurface.withValues(alpha: 0.3)
+                  : onSurface,
           fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
         ),
       ),
     );
   }
 }
+

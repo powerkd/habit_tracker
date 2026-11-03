@@ -95,13 +95,16 @@ class _TodayPageState extends ConsumerState<TodayPage>
 
     // 只在「從未全部完成」變成「全部完成」的那一刻觸發
     ref.listen(todayProvider, (prev, next) {
-      final before = prev?.value;
-      final after = next.value;
+      final wd = DateTime.now().weekday;
+      final before =
+        prev?.value?.where((e) => e.habit.runsOn(wd)).toList();
+      final after = next.value?.where((e) => e.habit.runsOn(wd)).toList();
       if (before == null || after == null || after.isEmpty) return;
       final wasAll = before.isNotEmpty && before.every((e) => e.doneToday);
       final nowAll = after.every((e) => e.doneToday);
       if (!wasAll && nowAll) _celebrate();
     });
+
 
     return Scaffold(
       appBar: AppBar(
@@ -120,9 +123,12 @@ class _TodayPageState extends ConsumerState<TodayPage>
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('載入失敗：$e')),
-        data: (items) {
-          if (items.isEmpty) {
-            final theme = Theme.of(context);
+        data: (all) {
+          final theme = Theme.of(context);
+          final wd = DateTime.now().weekday;
+          final items = all.where((i) => i.habit.runsOn(wd)).toList();
+
+          if (all.isEmpty) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(32),
@@ -154,26 +160,56 @@ class _TodayPageState extends ConsumerState<TodayPage>
               ),
             );
           }
-          final done = items.where((i) => i.doneToday).length;
-          return ReorderableListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
-            header: Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Text('已完成 $done／${items.length}',
-                  style: Theme.of(context).textTheme.titleLarge),
-            ),
-            itemCount: items.length,
-            onReorderItem: (o, n) =>
-                ref.read(todayProvider.notifier).reorder(o, n),
-            itemBuilder: (context, i) {
-              final item = items[i];
-              return _HabitCard(
-                key: ValueKey(item.habit.id),
-                item: item,
-              );
-            },
-          );
-        },
+
+          if (items.isEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.weekend_outlined,
+                        size: 72,
+                        color: theme.colorScheme.primary.withValues(alpha: 0.5)),
+                    const SizedBox(height: 16),
+                    Text('今天沒有排程的習慣', style: theme.textTheme.titleLarge),
+                    const SizedBox(height: 8),
+                    Text(
+                      '好好休息。\n你的習慣都安排在其他日子。',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+  final done = items.where((i) => i.doneToday).length;
+  return ReorderableListView.builder(
+    padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+    header: Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Text('已完成 $done／${items.length}',
+          style: theme.textTheme.titleLarge),
+    ),
+    itemCount: items.length,
+    onReorderItem: (o, n) {
+      final ids = items.map((e) => e.habit.id!).toList();
+      final moved = ids.removeAt(o);
+      ids.insert(n, moved);
+      ref.read(todayProvider.notifier).reorderVisible(ids);
+    },
+    itemBuilder: (context, i) {
+      final item = items[i];
+      return _HabitCard(
+        key: ValueKey(item.habit.id),
+        item: item,
+      );
+    },
+  );
+},
+
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.push(
