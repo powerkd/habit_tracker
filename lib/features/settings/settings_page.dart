@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../core/glass_kit.dart';
 import '../habits/presentation/habit_providers.dart';
 import 'archived_page.dart';
 import 'backup_service.dart';
@@ -41,6 +42,10 @@ class SettingsPage extends ConsumerWidget {
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('取消')),
           FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(ctx).colorScheme.error,
+                foregroundColor: Theme.of(ctx).colorScheme.onError,
+              ),
               onPressed: () => Navigator.pop(ctx, true),
               child: const Text('選擇檔案')),
         ],
@@ -65,6 +70,32 @@ class SettingsPage extends ConsumerWidget {
     }
   }
 
+  Widget _section(BuildContext context, String title, Widget child) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 8, bottom: 8),
+            child: Text(
+              title,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+          GlassContainer(
+            padding: const EdgeInsets.all(8),
+            child: SizedBox(width: double.infinity, child: child),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final mode = ref.watch(themeModeProvider).value ?? ThemeMode.system;
@@ -72,57 +103,120 @@ class SettingsPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('設定')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
         children: [
-          Text('外觀', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          SegmentedButton<ThemeMode>(
-            segments: const [
-              ButtonSegment(
-                  value: ThemeMode.system,
-                  icon: Icon(Icons.brightness_auto),
-                  label: Text('系統')),
-              ButtonSegment(
-                  value: ThemeMode.light,
-                  icon: Icon(Icons.light_mode),
-                  label: Text('淺色')),
-              ButtonSegment(
-                  value: ThemeMode.dark,
-                  icon: Icon(Icons.dark_mode),
-                  label: Text('深色')),
-            ],
-            selected: {mode},
-            onSelectionChanged: (s) =>
-                ref.read(themeModeProvider.notifier).setMode(s.first),
-          ),
-          const SizedBox(height: 24),
-          Text('資料', style: Theme.of(context).textTheme.titleMedium),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.archive_outlined),
-            title: const Text('已封存的習慣'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ArchivedPage()),
+          _section(
+            context,
+            '外觀',
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: SegmentedButton<ThemeMode>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(
+                      value: ThemeMode.system,
+                      icon: Icon(Icons.brightness_auto),
+                      label: Text('系統')),
+                  ButtonSegment(
+                      value: ThemeMode.light,
+                      icon: Icon(Icons.light_mode),
+                      label: Text('淺色')),
+                  ButtonSegment(
+                      value: ThemeMode.dark,
+                      icon: Icon(Icons.dark_mode),
+                      label: Text('深色')),
+                ],
+                selected: {mode},
+                onSelectionChanged: (s) =>
+                    ref.read(themeModeProvider.notifier).setMode(s.first),
+              ),
             ),
           ),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.upload_file_outlined),
-            title: const Text('匯出備份'),
-            subtitle: const Text('存成 JSON 檔,可傳到雲端或其他手機'),
-            onTap: () => _export(context),
-          ),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.download_outlined),
-            title: const Text('匯入備份'),
-            subtitle: const Text('從 JSON 檔還原(會取代目前資料)'),
-            onTap: () => _import(context, ref),
+          _section(
+            context,
+            '資料',
+            Column(
+              children: [
+                _SettingsTile(
+                  icon: Icons.archive_outlined,
+                  title: '已封存的習慣',
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ArchivedPage()),
+                  ),
+                ),
+                const _Divider(),
+                _SettingsTile(
+                  icon: Icons.upload_file_outlined,
+                  title: '匯出備份',
+                  subtitle: '存成 JSON 檔,可傳到雲端或其他手機',
+                  onTap: () => _export(context),
+                ),
+                const _Divider(),
+                _SettingsTile(
+                  icon: Icons.download_outlined,
+                  title: '匯入備份',
+                  subtitle: '從 JSON 檔還原(會取代目前資料)',
+                  onTap: () => _import(context, ref),
+                ),
+              ],
+            ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _Divider extends StatelessWidget {
+  const _Divider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Divider(
+      height: 1,
+      indent: 64,
+      endIndent: 8,
+      thickness: 0.5,
+      color: Theme.of(context).colorScheme.outlineVariant,
+    );
+  }
+}
+
+class _SettingsTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final Widget? trailing;
+  final VoidCallback onTap;
+
+  const _SettingsTile({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+    this.subtitle,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListTile(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      leading: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: scheme.primary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(icon, color: scheme.primary, size: 22),
+      ),
+      title: Text(title),
+      subtitle: subtitle == null ? null : Text(subtitle!),
+      trailing: trailing,
+      onTap: onTap,
     );
   }
 }
