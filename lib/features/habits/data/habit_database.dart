@@ -10,7 +10,7 @@ class HabitDatabase {
 
     _db = await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
@@ -26,7 +26,8 @@ class HabitDatabase {
             created_at TEXT NOT NULL,
             is_archived INTEGER NOT NULL DEFAULT 0,
             sort_order INTEGER NOT NULL DEFAULT 0,
-            remind_time TEXT
+            remind_time TEXT,
+            weekdays INTEGER NOT NULL DEFAULT 127
           )
         ''');
         await db.execute('''
@@ -40,16 +41,26 @@ class HabitDatabase {
         ''');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
-        // 從 1 升級：兩個欄位都沒有
-        if (oldVersion < 2) {
-          final columns = await db.rawQuery("PRAGMA table_info(habits)");
-          final hasremindTime = columns.any((c) => c['name'] == 'remind_time');
-          if (!hasremindTime) {
-            await db.execute('ALTER TABLE habits ADD COLUMN remind_time TEXT');
-          }
-        }
+        await _ensureColumns(db);
+      },
+      // 保險:即使版本號已是 4 但欄位缺失,也會在開啟時補上
+      onOpen: (db) async {
+        await _ensureColumns(db);
       },
     );
     return _db!;
+  }
+
+  static Future<void> _ensureColumns(Database db) async {
+    final columns = await db.rawQuery('PRAGMA table_info(habits)');
+    bool has(String name) => columns.any((c) => c['name'] == name);
+
+    if (!has('remind_time')) {
+      await db.execute('ALTER TABLE habits ADD COLUMN remind_time TEXT');
+    }
+    if (!has('weekdays')) {
+      await db.execute(
+          'ALTER TABLE habits ADD COLUMN weekdays INTEGER NOT NULL DEFAULT 127');
+    }
   }
 }

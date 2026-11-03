@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../domain/habit.dart';
 import '../domain/habit_style.dart';
 import 'habit_providers.dart';
+import '../domain/weekday_utils.dart';
 
 class HabitFormPage extends ConsumerStatefulWidget {
   /// 傳入 habit 代表編輯；null 代表新增
@@ -19,7 +20,8 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
   late final TextEditingController _desc;
   late String _iconKey;
   late int _colorValue;
-  String? _remindTime; // "HH:mm"；null 代表不提醒
+  String? _remindTime;
+  late int _weekdays; // "HH:mm"；null 代表不提醒
   bool _saving = false;
 
   bool get _isEdit => widget.habit != null;
@@ -33,6 +35,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
     _iconKey = h?.iconKey ?? 'book';
     _colorValue = h?.colorValue ?? habitColors.first;
     _remindTime = h?.remindTime;
+    _weekdays = h?.weekdays ?? allWeekdays;
   }
 
   @override
@@ -64,6 +67,10 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
   }
 
   Future<void> _save() async {
+    if (_weekdays == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('至少選擇一天')));
+      return;
+    }
     if (_saving) return; // 防止重複點擊
     if (!_formKey.currentState!.validate()) return;
 
@@ -82,6 +89,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
           isArchived: widget.habit!.isArchived,
           sortOrder: widget.habit!.sortOrder,
           remindTime: _remindTime,
+          weekdays: _weekdays,
         ));
       } else {
         await notifier.add(
@@ -90,6 +98,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
           iconKey: _iconKey,
           colorValue: _colorValue,
           remindTime: _remindTime,
+          weekdays: _weekdays,
         );
       }
       if (mounted) Navigator.pop(context);
@@ -174,7 +183,45 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
               ],
             ),
             const SizedBox(height: 20),
-            Text('每日提醒', style: Theme.of(context).textTheme.titleMedium),
+            Text('重複', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                for (var i = 0; i < 7; i++)
+                  FilterChip(
+                    label: Text(weekdayNames[i]),
+                    selected: (_weekdays >> i) & 1 == 1,
+                    showCheckmark: false,
+                    selectedColor: color.withValues(alpha: 0.25),
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    onSelected: (on) => setState(() {
+                      _weekdays = on ? _weekdays | (1 << i) : _weekdays & ~(1 << i);
+                    }),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 8,
+              children: [
+                ActionChip(
+                  label: const Text('每天'),
+                  onPressed: () => setState(() => _weekdays = allWeekdays),
+                ),
+                ActionChip(
+                  label: const Text('平日'),
+                  onPressed: () => setState(() => _weekdays = workdays),
+                ),
+                ActionChip(
+                  label: const Text('週末'),
+                  onPressed: () => setState(() => _weekdays = weekend),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Text('提醒', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             Card(
               elevation: 0,

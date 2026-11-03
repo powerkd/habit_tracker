@@ -114,6 +114,8 @@ class BackupService {
     final created = raw['created_at'];
     final archived = raw['is_archived'];
     final order = raw['sort_order'];
+    final wd = raw['weekdays'];
+    final weekdays = (wd is int && wd >= 1 && wd <= 127) ? wd : 127;
 
     return {
       'id': id,
@@ -122,6 +124,7 @@ class BackupService {
       'icon_key': iconKey,
       'color_value': color,
       'start_date': start,
+      'weekdays': weekdays,
       'created_at':
           created is String ? created : DateTime.now().toUtc().toIso8601String(),
       'is_archived': archived == 1 ? 1 : 0,

@@ -9,11 +9,14 @@ class ArchivedPage extends ConsumerWidget {
 
   Future<void> _confirmDelete(
       BuildContext context, WidgetRef ref, Habit habit) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final notifier = ref.read(todayProvider.notifier);
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('永久刪除'),
-        content: Text('「${habit.name}」與所有打卡紀錄都會被刪除,無法復原。'),
+        content: Text('「${habit.name}」與所有打卡紀錄都會被刪除。\n刪除後 6 秒內可以復原。'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -27,8 +30,33 @@ class ArchivedPage extends ConsumerWidget {
         ],
       ),
     );
-    if (ok == true) {
-      await ref.read(todayProvider.notifier).deleteHabit(habit.id!);
+    if (ok != true) return;
+
+    try {
+      final snap = await notifier.deleteWithSnapshot(habit.id!);
+      if (snap == null) return;
+
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('已刪除「${habit.name}」'),
+            duration: const Duration(seconds: 6),
+            action: SnackBarAction(
+              label: '復原',
+              onPressed: () async {
+                try {
+                  await notifier.restoreDeleted(snap);
+                } catch (e) {
+                  messenger.showSnackBar(
+                      SnackBar(content: Text('復原失敗:$e')));
+                }
+              },
+            ),
+          ),
+        );
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('刪除失敗:$e')));
     }
   }
 

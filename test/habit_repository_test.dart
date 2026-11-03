@@ -60,6 +60,7 @@ void main() {
     await repo.complete(id, '2026-11-02');
     expect(await repo.getCompletedKeys(id), {'2026-11-02'});
   });
+  
 
   test('取消完成會移除該日紀錄', () async {
     final id = await addSample();

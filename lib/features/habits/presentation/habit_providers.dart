@@ -55,8 +55,8 @@ class TodayNotifier extends AsyncNotifier<List<HabitItem>> {
       items.add(HabitItem(
         habit: h,
         doneToday: keys.contains(todayKey),
-        currentStreak: StreakCalculator.current(keys, now),
-        longestStreak: StreakCalculator.longest(keys),
+        currentStreak: StreakCalculator.current(keys, now, weekdays: h.weekdays),
+        longestStreak: StreakCalculator.longest(keys, weekdays: h.weekdays),
       ));
     }
     return items;
@@ -75,6 +75,7 @@ class TodayNotifier extends AsyncNotifier<List<HabitItem>> {
     required String iconKey,
     required int colorValue,
     String? remindTime, // 新增
+    int weekdays = Habit.allDays,
   }) async {
     await _repo.addHabit(Habit(
       name: name.trim(),
@@ -85,6 +86,7 @@ class TodayNotifier extends AsyncNotifier<List<HabitItem>> {
       colorValue: colorValue,
       startDate: toDateKey(DateTime.now()),
       remindTime: remindTime, // 新增
+      weekdays: weekdays,
     ));
     await _reload();
   }
@@ -140,6 +142,27 @@ class TodayNotifier extends AsyncNotifier<List<HabitItem>> {
     state = AsyncData(items);
     await _repo.updateOrder(items.map((e) => e.habit.id!).toList());
   }
+
+  /// 只重排「今天可見」的習慣,隱藏的習慣維持原位置
+  Future<void> reorderVisible(List<int> visibleIdsInNewOrder) async {
+    final items = [...(state.value ?? <HabitItem>[])];
+    final visibleSet = visibleIdsInNewOrder.toSet();
+    final byId = {for (final e in items) e.habit.id!: e};
+    final queue = visibleIdsInNewOrder.iterator;
+  
+    final result = <HabitItem>[];
+    for (final e in items) {
+      if (visibleSet.contains(e.habit.id)) {
+        queue.moveNext();
+        result.add(byId[queue.current]!);
+      } else {
+        result.add(e);
+      }
+    }
+    state = AsyncData(result);
+    await _repo.updateOrder(result.map((e) => e.habit.id!).toList());
+  }
+
 
   Future<DeletedHabitSnapshot?> deleteWithSnapshot(int id) async {
   final snap = await _repo.deleteHabitWithSnapshot(id);

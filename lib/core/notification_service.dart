@@ -7,6 +7,7 @@ import 'package:timezone/timezone.dart' as tz;
 import '../features/habits/domain/habit.dart';
 import '../features/habits/presentation/habit_detail_page.dart';
 import 'app_navigator.dart';
+import '../features/habits/domain/weekday_utils.dart';
 
 class NotificationService {
   NotificationService._();
@@ -82,38 +83,76 @@ class NotificationService {
     for (final h in habits) {
       final t = h.remindTime;
       if (h.id == null || t == null) continue;
-      await _schedule(h.id!, h.name, t);
+      await _schedule(h.id!, h.name, t, h.weekdays);
     }
   }
 
-  Future<void> _schedule(int id, String name, String hhmm) async {
+   Future<void> _schedule(
+      int habitId, String name, String hhmm, int weekdays) async {
     final parts = hhmm.split(':');
     final hour = int.parse(parts[0]);
     final minute = int.parse(parts[1]);
-
+  
+    if (weekdays == allWeekdays) {
+      await _scheduleOne(
+        notifId: habitId * 10,
+        habitId: habitId,
+        name: name,
+        when: _nextOccurrence(hour, minute, null),
+        repeat: DateTimeComponents.time,
+      );
+      return;
+    }
+  
+    for (var wd = 1; wd <= 7; wd++) {
+      if (!weekdayRuns(weekdays, wd)) continue;
+      await _scheduleOne(
+        notifId: habitId * 10 + wd,
+        habitId: habitId,
+        name: name,
+        when: _nextOccurrence(hour, minute, wd),
+        repeat: DateTimeComponents.dayOfWeekAndTime,
+      );
+    }
+  }
+  
+  /// 下一次觸發時間。weekday 為 null 代表任何一天
+  tz.TZDateTime _nextOccurrence(int hour, int minute, int? weekday) {
     final now = tz.TZDateTime.now(tz.local);
     var when =
         tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute);
-    if (when.isBefore(now)) when = when.add(const Duration(days: 1));
-
+    while (when.isBefore(now) ||
+        (weekday != null && when.weekday != weekday)) {
+      when = when.add(const Duration(days: 1));
+    }
+    return when;
+  }
+  
+  Future<void> _scheduleOne({
+    required int notifId,
+    required int habitId,
+    required String name,
+    required tz.TZDateTime when,
+    required DateTimeComponents repeat,
+  }) async {
     await _plugin.zonedSchedule(
-      id: id,
+      id: notifId,
       title: '該打卡囉',
       body: name,
-      payload: id.toString(),
+      payload: habitId.toString(),
       scheduledDate: when,
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
           'habit_reminder',
           '習慣提醒',
-          channelDescription: '每日習慣打卡提醒',
+          channelDescription: '習慣打卡提醒',
           importance: Importance.high,
           priority: Priority.high,
         ),
         iOS: DarwinNotificationDetails(),
       ),
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      matchDateTimeComponents: DateTimeComponents.time, // 每天重複
+      matchDateTimeComponents: repeat,
     );
   }
 }
