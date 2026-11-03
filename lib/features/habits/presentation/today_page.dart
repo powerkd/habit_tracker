@@ -1,6 +1,9 @@
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/glass_kit.dart';
+import '../../../core/progress_ring.dart';
 import '../domain/habit_style.dart';
 import 'habit_detail_page.dart';
 import 'habit_form_page.dart';
@@ -16,6 +19,10 @@ class TodayPage extends ConsumerStatefulWidget {
 
 class _TodayPageState extends ConsumerState<TodayPage>
     with WidgetsBindingObserver {
+  bool _celebrating = false;
+  final _scroll = ScrollController();
+  final _offset = ValueNotifier<double>(0);
+
   String get dateText {
     final now = DateTime.now();
     return '${now.year}年${now.month}月${now.day}日';
@@ -25,11 +32,16 @@ class _TodayPageState extends ConsumerState<TodayPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _scroll.addListener(() {
+      _offset.value = _scroll.hasClients ? _scroll.offset : 0;
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _scroll.dispose();
+    _offset.dispose();
     super.dispose();
   }
 
@@ -41,63 +53,87 @@ class _TodayPageState extends ConsumerState<TodayPage>
     }
   }
 
+  void _openSettings() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const SettingsPage()),
+    );
+  }
+
+  void _openForm() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const HabitFormPage()),
+    );
+  }
+
   /// 全部完成時的慶祝動畫
   Future<void> _celebrate() async {
+    if (_celebrating) return;
+    _celebrating = true;
     HapticFeedback.heavyImpact();
-    showGeneralDialog(
+
+    final reduce = MediaQuery.disableAnimationsOf(context);
+    final nav = Navigator.of(context, rootNavigator: true);
+    var open = true;
+
+    Future.delayed(const Duration(milliseconds: 1600), () {
+      if (open && mounted && nav.canPop()) nav.pop();
+    });
+
+    await showGeneralDialog(
       context: context,
       barrierDismissible: true,
       barrierLabel: '慶祝',
       barrierColor: Colors.black38,
-      transitionDuration: const Duration(milliseconds: 200),
-      pageBuilder: (ctx, _, _) {
-        Future.delayed(const Duration(milliseconds: 1600), () {
-          if (ctx.mounted && Navigator.of(ctx).canPop()) {
-            Navigator.of(ctx).pop();
-          }
-        });
-        return Center(
-          child: Material(
-            color: Colors.transparent,
-            child: TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0.3, end: 1.0),
-              duration: const Duration(milliseconds: 600),
-              curve: Curves.elasticOut,
-              builder: (_, scale, child) =>
-                  Transform.scale(scale: scale, child: child),
-              child: Container(
-                padding: const EdgeInsets.all(32),
-                decoration: BoxDecoration(
-                  color: Theme.of(ctx).colorScheme.surface,
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: const Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('🎉', style: TextStyle(fontSize: 64)),
-                    SizedBox(height: 8),
-                    Text('今天全部完成！',
-                        style: TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-              ),
+      transitionDuration:
+          reduce ? Duration.zero : const Duration(milliseconds: 380),
+      pageBuilder: (ctx, _, _) => const Center(
+        child: Material(
+          color: Colors.transparent,
+          child: GlassContainer(
+            borderRadius: BorderRadius.all(Radius.circular(28)),
+            padding: EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('🎉', style: TextStyle(fontSize: 64)),
+                SizedBox(height: 8),
+                Text('今天全部完成！',
+                    style:
+                        TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              ],
             ),
+          ),
+        ),
+      ),
+      transitionBuilder: (ctx, anim, _, child) {
+        final curved = CurvedAnimation(
+          parent: anim,
+          curve: Curves.easeOutBack,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return FadeTransition(
+          opacity: anim,
+          child: ScaleTransition(
+            scale: Tween(begin: 0.85, end: 1.0).animate(curved),
+            child: child,
           ),
         );
       },
     );
+
+    open = false;
+    _celebrating = false;
   }
 
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(todayProvider);
 
-    // 只在「從未全部完成」變成「全部完成」的那一刻觸發
     ref.listen(todayProvider, (prev, next) {
       final wd = DateTime.now().weekday;
-      final before =
-        prev?.value?.where((e) => e.habit.runsOn(wd)).toList();
+      final before = prev?.value?.where((e) => e.habit.runsOn(wd)).toList();
       final after = next.value?.where((e) => e.habit.runsOn(wd)).toList();
       if (before == null || after == null || after.isEmpty) return;
       final wasAll = before.isNotEmpty && before.every((e) => e.doneToday);
@@ -105,182 +141,428 @@ class _TodayPageState extends ConsumerState<TodayPage>
       if (!wasAll && nowAll) _celebrate();
     });
 
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(dateText),
-        actions: [
-          IconButton(
-            tooltip: '設定',
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const SettingsPage()),
+    return GlassScaffold(
+      body: Stack(
+        children: [
+          SafeArea(
+            bottom: false,
+            child: async.when(
+              skipLoadingOnReload: true,
+              skipLoadingOnRefresh: true,
+              loading: () => const SizedBox.shrink(),
+              error: (e, _) => Center(child: Text('載入失敗：$e')),
+              data: (all) => _buildContent(context, all),
             ),
           ),
-        ],
-      ),
-      body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('載入失敗：$e')),
-        data: (all) {
-  final theme = Theme.of(context);
-  final wd = DateTime.now().weekday;
-  final scheduled = all.where((i) => i.habit.runsOn(wd)).toList();
-  final resting = all.where((i) => !i.habit.runsOn(wd)).toList();
-
-  if (all.isEmpty) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.checklist_rounded,
-                size: 72,
-                color: theme.colorScheme.primary.withValues(alpha: 0.5)),
-            const SizedBox(height: 16),
-            Text('還沒有任何習慣', style: theme.textTheme.titleLarge),
-            const SizedBox(height: 8),
-            Text(
-              '從一個小習慣開始,\n每天打卡,累積連續天數。',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const HabitFormPage()),
+          _buildMiniBar(context),
+          // 空狀態中央已有「新增第一個習慣」，不重複顯示膠囊
+          if (async.value?.isNotEmpty ?? false)
+            Positioned(
+              right: 20,
+              bottom: MediaQuery.paddingOf(context).bottom + 20,
+              child: GlassPill(
+                icon: Icons.add_rounded,
+                label: '新增習慣',
+                onPressed: _openForm,
               ),
-              icon: const Icon(Icons.add),
-              label: const Text('新增第一個習慣'),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }
 
-  final done = scheduled.where((i) => i.doneToday).length;
+  /// 捲動超過大標題後，從頂部淡入的迷你標題列
+  Widget _buildMiniBar(BuildContext context) {
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    final top = MediaQuery.paddingOf(context).top;
 
-  return ReorderableListView.builder(
-    padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
-    header: Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        scheduled.isEmpty
-            ? '今天沒有排程的習慣'
-            : '已完成 $done／${scheduled.length}',
-        style: theme.textTheme.titleLarge,
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: ValueListenableBuilder<double>(
+        valueListenable: _offset,
+        builder: (context, offset, _) {
+          final t = ((offset - 50) / 40).clamp(0.0, 1.0);
+          if (t == 0) return const SizedBox.shrink();
+
+          return IgnorePointer(
+            child: Opacity(
+              opacity: t,
+              child: ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                  child: Container(
+                    height: top + 48,
+                    padding: EdgeInsets.only(top: top),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: (dark
+                              ? const Color(0xFF0B0F14)
+                              : const Color(0xFFF4F6F8))
+                          .withValues(alpha: 0.8),
+                      border: Border(
+                        bottom: BorderSide(
+                          color: (dark ? Colors.white : Colors.black)
+                              .withValues(alpha: 0.08),
+                          width: 0.5,
+                        ),
+                      ),
+                    ),
+                    child: Text('今天', style: theme.textTheme.titleMedium),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
-    ),
-    footer: resting.isEmpty
-        ? null
-        : Column(
+    );
+  }
+
+  Widget _buildHeader(
+    ThemeData theme,
+    List<HabitItem> scheduled,
+    int done,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 12, bottom: 8),
-                child: Text('今天休息', style: theme.textTheme.titleMedium),
-              ),
-              for (final item in resting)
-                _HabitCard(
-                  key: ValueKey('rest_${item.habit.id}'),
-                  item: item,
-                  resting: true,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      dateText,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      scheduled.isEmpty ? '今天休息' : '今天',
+                      style: theme.textTheme.headlineLarge,
+                    ),
+                  ],
                 ),
+              ),
+              GlassIconButton(
+                blur: null,
+                icon: Icons.settings_outlined,
+                semanticLabel: '設定',
+                onPressed: _openSettings,
+              ),
             ],
           ),
-    itemCount: scheduled.length,
-    onReorderItem: (o, n) {
-      final ids = scheduled.map((e) => e.habit.id!).toList();
-      final moved = ids.removeAt(o);
-      ids.insert(n, moved);
-      ref.read(todayProvider.notifier).reorderVisible(ids);
-    },
-    itemBuilder: (context, i) {
-      final item = scheduled[i];
-      return _HabitCard(key: ValueKey(item.habit.id), item: item);
-    },
-  );
-},
-
-
+          const SizedBox(height: 16),
+          if (scheduled.isEmpty)
+            Text(
+              '沒有排程的習慣',
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: theme.colorScheme.primary,
+              ),
+            )
+          else
+            Semantics(
+              label: '今日進度 $done／${scheduled.length}',
+              excludeSemantics: true,
+              child: GlassContainer(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    ProgressRing(
+                      progress: done / scheduled.length,
+                      child: Text(
+                        '${(done / scheduled.length * 100).round()}%',
+                        style: theme.textTheme.labelSmall
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '已完成 $done／${scheduled.length}',
+                            style: theme.textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            done == scheduled.length
+                                ? '今天全部完成 🎉'
+                                : '還差 ${scheduled.length - done} 個',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const HabitFormPage()),
-        ),
-        icon: const Icon(Icons.add),
-        label: const Text('新增習慣'),
+    );
+  }
+
+  Widget _buildContent(BuildContext context, List<HabitItem> all) {
+    final theme = Theme.of(context);
+    final wd = DateTime.now().weekday;
+    final scheduled = all.where((i) => i.habit.runsOn(wd)).toList();
+    final resting = all.where((i) => !i.habit.runsOn(wd)).toList();
+
+    if (all.isEmpty) {
+      return Stack(
+        children: [
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.checklist_rounded,
+                      size: 72,
+                      color:
+                          theme.colorScheme.primary.withValues(alpha: 0.5)),
+                  const SizedBox(height: 16),
+                  Text('還沒有任何習慣', style: theme.textTheme.titleLarge),
+                  const SizedBox(height: 8),
+                  Text(
+                    '從一個小習慣開始,\n每天打卡,累積連續天數。',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 24),
+                  FilledButton.icon(
+                    onPressed: _openForm,
+                    icon: const Icon(Icons.add),
+                    label: const Text('新增第一個習慣'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            top: 8,
+            right: 20,
+            child: GlassIconButton(
+              blur: null,
+              icon: Icons.settings_outlined,
+              semanticLabel: '設定',
+              onPressed: _openSettings,
+            ),
+          ),
+        ],
+      );
+    }
+
+    final done = scheduled.where((i) => i.doneToday).length;
+
+    return ReorderableListView.builder(
+      scrollController: _scroll,
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
       ),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+      header: _buildHeader(theme, scheduled, done),
+      proxyDecorator: (child, index, anim) => AnimatedBuilder(
+        animation: anim,
+        builder: (ctx, c) {
+          final t = Curves.easeOutCubic.transform(anim.value);
+          return Transform.scale(
+            scale: 1 + 0.03 * t,
+            child: Material(type: MaterialType.transparency, child: c),
+          );
+        },
+        child: child,
+      ),
+      footer: resting.isEmpty
+          ? null
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 12, bottom: 8),
+                  child: Text('今天休息', style: theme.textTheme.titleMedium),
+                ),
+                for (final item in resting)
+                  _HabitCard(
+                    key: ValueKey('rest_${item.habit.id}'),
+                    item: item,
+                    resting: true,
+                  ),
+              ],
+            ),
+      itemCount: scheduled.length,
+      onReorderItem: (o, n) {
+        final ids = scheduled.map((e) => e.habit.id!).toList();
+        final moved = ids.removeAt(o);
+        ids.insert(n, moved);
+        ref.read(todayProvider.notifier).reorderVisible(ids);
+      },
+      itemBuilder: (context, i) {
+        final item = scheduled[i];
+        return _HabitCard(key: ValueKey(item.habit.id), item: item);
+      },
     );
   }
 }
 
-class _HabitCard extends ConsumerWidget {
+class _HabitCard extends ConsumerStatefulWidget {
   final HabitItem item;
   final bool resting;
   const _HabitCard({super.key, required this.item, this.resting = false});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_HabitCard> createState() => _HabitCardState();
+}
+
+class _HabitCardState extends ConsumerState<_HabitCard> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    final resting = widget.resting;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final color = Color(item.habit.colorValue);
     final done = item.doneToday;
-    final scheme = Theme.of(context).colorScheme;
+    final reduce = MediaQuery.disableAnimationsOf(context);
 
-    return Opacity( 
-      opacity: resting ? 0.5 : 1.0,
-      child:AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: done ? color.withValues(alpha: 0.15) : scheme.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: done ? color : scheme.outlineVariant),
-        ),
-        child: ListTile(
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => HabitDetailPage(habitId: item.habit.id!),
-            ),
+    final titleColor =
+        resting ? scheme.onSurface.withValues(alpha: 0.5) : scheme.onSurface;
+    final subColor =
+        scheme.onSurfaceVariant.withValues(alpha: resting ? 0.6 : 1.0);
+    final status = resting
+        ? '今天休息'
+        : done
+            ? '已完成'
+            : '未完成';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: AnimatedScale(
+        scale: _down ? 0.98 : 1,
+        duration: reduce ? Duration.zero : const Duration(milliseconds: 120),
+        curve: Curves.easeOutCubic,
+        child: AnimatedContainer(
+          duration:
+              reduce ? Duration.zero : const Duration(milliseconds: 250),
+          curve: Curves.easeOutCubic,
+          decoration: BoxDecoration(
+            color: done && !resting
+                ? color.withValues(alpha: 0.16)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(24),
           ),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          leading: CircleAvatar(
-            backgroundColor: color.withValues(alpha: 0.15),
-            child: Icon(iconFor(item.habit.iconKey), color: color),
-          ),
-          title: Text(item.habit.name,
-              maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(
-            resting
-                ? '今天休息 · 🔥 連續 ${item.currentStreak} 天'
-                : '🔥 連續 ${item.currentStreak} 天 · ${done ? "已完成" : "未完成"}',
-          ),
-          trailing: IconButton(
-            tooltip: done ? '取消完成' : '標記完成',
-            icon: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: Icon(
-                done ? Icons.check_circle : Icons.circle_outlined,
-                key: ValueKey(done),
-                color: done ? color : Colors.grey,
-                size: 32,
+          child: GlassContainer(
+            borderRadius: BorderRadius.circular(24),
+            padding: EdgeInsets.zero,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(24),
+                onHighlightChanged: (v) => setState(() => _down = v),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => HabitDetailPage(habitId: item.habit.id!),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color:
+                              color.withValues(alpha: resting ? 0.08 : 0.18),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Icon(
+                          iconFor(item.habit.iconKey),
+                          color:
+                              resting ? color.withValues(alpha: 0.5) : color,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.habit.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleMedium
+                                  ?.copyWith(color: titleColor),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '🔥 ${item.currentStreak} 天 · $status',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium
+                                  ?.copyWith(color: subColor, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: IconButton(
+                          tooltip: done ? '取消完成' : '標記完成',
+                          icon: AnimatedSwitcher(
+                            duration: reduce
+                                ? Duration.zero
+                                : const Duration(milliseconds: 320),
+                            transitionBuilder: (child, anim) =>
+                                ScaleTransition(
+                              scale: CurvedAnimation(
+                                  parent: anim, curve: Curves.easeOutBack),
+                              child: child,
+                            ),
+                            child: Icon(
+                              done
+                                  ? Icons.check_circle
+                                  : Icons.circle_outlined,
+                              key: ValueKey(done),
+                              size: 32,
+                              color: done
+                                  ? color
+                                  : scheme.outline
+                                      .withValues(alpha: resting ? 0.5 : 1.0),
+                            ),
+                          ),
+                          onPressed: () {
+                            HapticFeedback.lightImpact();
+                            ref
+                                .read(todayProvider.notifier)
+                                .toggle(item.habit.id!, item.doneToday);
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-            onPressed: () {
-              HapticFeedback.lightImpact();
-              ref
-                  .read(todayProvider.notifier)
-                  .toggle(item.habit.id!, item.doneToday);
-            },
           ),
         ),
-      )
+      ),
     );
   }
 }

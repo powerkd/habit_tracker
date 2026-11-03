@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:habit_tracker/core/glass_kit.dart';
 import '../habits/domain/habit.dart';
 import '../habits/domain/habit_style.dart';
 import '../habits/presentation/habit_providers.dart';
@@ -64,7 +65,7 @@ class ArchivedPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(archivedProvider);
 
-    return Scaffold(
+    return GlassScaffold(
       appBar: AppBar(title: const Text('已封存的習慣')),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),

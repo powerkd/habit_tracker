@@ -3,11 +3,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:habit_tracker/core/date_utils.dart';
+import '../../../core/glass_kit.dart';
 import '../domain/habit_style.dart';
 import '../domain/streak_calculator.dart';
+import '../domain/weekday_utils.dart';
 import 'habit_form_page.dart';
 import 'habit_providers.dart';
-import '../domain/weekday_utils.dart';
+
+Color _onColor(Color c) =>
+    c.computeLuminance() > 0.6 ? Colors.black87 : Colors.white;
 
 class HabitDetailPage extends ConsumerStatefulWidget {
   final int habitId;
@@ -48,26 +52,45 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
     final async = ref.watch(habitDetailProvider(widget.habitId));
 
     return async.when(
-      loading: () =>
-          const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Scaffold(
+      skipLoadingOnReload: true,
+      skipLoadingOnRefresh: true,
+      loading: () => GlassScaffold(
+          appBar: AppBar(),
+          body: const SizedBox.shrink(),
+    ),
+      error: (e, _) => GlassScaffold(
           appBar: AppBar(), body: Center(child: Text('載入失敗：$e'))),
       data: (d) {
+        final theme = Theme.of(context);
+        final scheme = theme.colorScheme;
         final habit = d.habit;
         final color = Color(habit.colorValue);
+        final onColor = _onColor(color);
         final now = DateTime.now();
         final today = DateTime(now.year, now.month, now.day);
         final todayKey = toDateKey(today);
         final doneToday = d.completedKeys.contains(todayKey);
-        final current = StreakCalculator.current(d.completedKeys, now);
-        final longest = StreakCalculator.longest(d.completedKeys);
+        final current = StreakCalculator.current(
+          d.completedKeys,
+          now,
+          weekdays: habit.weekdays,
+        );
+        final longest = StreakCalculator.longest(
+          d.completedKeys,
+          weekdays: habit.weekdays,
+        );
         final start = DateTime.parse(habit.startDate);
         final selected = _selected ?? today;
         final selectedKey = toDateKey(selected);
         final selectedDone = d.completedKeys.contains(selectedKey);
         final selectedIsToday = selectedKey == todayKey;
+        final selectedScheduled =
+            weekdayRuns(habit.weekdays, selected.weekday);
+        final todayScheduled = weekdayRuns(habit.weekdays, today.weekday);
 
-        return Scaffold(
+        final schedule = weekdaysLabel(habit.weekdays);
+
+        return GlassScaffold(
           appBar: AppBar(
             title: Text(habit.name, overflow: TextOverflow.ellipsis),
             actions: [
@@ -88,34 +111,47 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
             ],
           ),
           body: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
             children: [
               // 標題區
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 28,
-                    backgroundColor: color.withValues(alpha: 0.15),
-                    child: Icon(iconFor(habit.iconKey), color: color),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          habit.description ?? weekdaysLabel(habit.weekdays),
-                          style: Theme.of(context).textTheme.bodyLarge,
-                        ),
-                        if (habit.remindTime != null) ...[
-                          const SizedBox(height: 4),
-                          Text('⏰ 每天 ${weekdaysLabel(habit.weekdays)} ${habit.remindTime} 提醒',
-                              style: Theme.of(context).textTheme.bodySmall),
-                        ],
-                      ],
+              GlassContainer(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 28,
+                      backgroundColor: color.withValues(alpha: 0.18),
+                      child: Icon(iconFor(habit.iconKey), color: color),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (habit.description != null &&
+                              habit.description!.isNotEmpty) ...[
+                            Text(habit.description!,
+                                style: theme.textTheme.bodyLarge),
+                            const SizedBox(height: 4),
+                          ],
+                          Text(
+                            '🗓 $schedule',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                                color: scheme.onSurfaceVariant),
+                          ),
+                          if (habit.remindTime != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              '⏰ ${habit.remindTime} 提醒',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: scheme.onSurfaceVariant),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 16),
 
@@ -133,30 +169,45 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
               const SizedBox(height: 16),
 
               // 今日打卡按鈕
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: doneToday ? Colors.grey : color,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-                icon: Icon(doneToday ? Icons.undo : Icons.check),
-                label: Text(doneToday ? '取消今日完成' : '完成今日'),
-                onPressed: () {
-                  HapticFeedback.lightImpact();
-                  ref
-                      .read(todayProvider.notifier)
-                      .toggle(habit.id!, doneToday);
-                },
+              SizedBox(
+                height: 52,
+                child: doneToday
+                    ? OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(26)),
+                        ),
+                        icon: const Icon(Icons.undo),
+                        label: const Text('取消今日完成'),
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          ref
+                              .read(todayProvider.notifier)
+                              .toggle(habit.id!, doneToday);
+                        },
+                      )
+                    : FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: color,
+                          foregroundColor: onColor,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(26)),
+                        ),
+                        icon: const Icon(Icons.check),
+                        label: Text(todayScheduled ? '完成今日' : '今天休息，仍要打卡'),
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          ref
+                              .read(todayProvider.notifier)
+                              .toggle(habit.id!, doneToday);
+                        },
+                      ),
               ),
               const SizedBox(height: 16),
 
               // 日曆
-              Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  side: BorderSide(
-                      color: Theme.of(context).colorScheme.outlineVariant),
-                ),
+              GlassContainer(
+                padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
                 child: TableCalendar(
                   locale: 'zh_TW',
                   firstDay: start,
@@ -166,6 +217,11 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
                   availableCalendarFormats: const {
                     CalendarFormat.month: '月'
                   },
+                  headerStyle: HeaderStyle(
+                    formatButtonVisible: false,
+                    titleCentered: true,
+                    titleTextStyle: theme.textTheme.titleMedium!,
+                  ),
                   selectedDayPredicate: (day) => isSameDay(day, selected),
                   onDaySelected: (sel, foc) => setState(() {
                     _selected = sel;
@@ -202,8 +258,9 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
               // 所選日期狀態（文字，不只靠顏色）
               Center(
                 child: Text(
-                  '$selectedKey：${selectedDone ? "✅ 已完成" : "尚未完成"}',
-                  style: Theme.of(context).textTheme.bodyMedium,
+                  '$selectedKey：${selectedDone ? "✅ 已完成" : "尚未完成"}'
+                  '${selectedScheduled ? "" : "（非排程日）"}',
+                  style: theme.textTheme.bodyMedium,
                 ),
               ),
               const SizedBox(height: 8),
@@ -211,7 +268,13 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
               // 補打／取消所選日期（今天已有上方按鈕，這裡只處理過去日期）
               if (!selectedIsToday)
                 OutlinedButton.icon(
-                  icon: Icon(selectedDone ? Icons.undo : Icons.edit_calendar),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24)),
+                  ),
+                  icon: Icon(
+                      selectedDone ? Icons.undo : Icons.edit_calendar),
                   label: Text(selectedDone ? '取消這天的完成' : '補打這天'),
                   onPressed: () {
                     HapticFeedback.lightImpact();
@@ -235,24 +298,39 @@ class _StatBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(12),
-          border:
-              Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-        ),
-        child: Column(
-          children: [
-            Text(value,
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 15)),
-            const SizedBox(height: 4),
-            Text(label,
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
-          ],
+      child: Semantics(
+        label: '$label $value',
+        excludeSemantics: true,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
+          decoration: BoxDecoration(
+            color: scheme.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: scheme.outlineVariant.withValues(alpha: 0.5),
+              width: 0.5,
+            ),
+          ),
+          child: Column(
+            children: [
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  value,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700, fontSize: 16),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                    color: scheme.onSurfaceVariant, fontSize: 12),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -297,7 +375,7 @@ class _DayCell extends StatelessWidget {
         '${day.day}',
         style: TextStyle(
           color: done
-              ? Colors.white
+              ? _onColor(color)
               : dim
                   ? onSurface.withValues(alpha: 0.3)
                   : onSurface,
@@ -307,4 +385,3 @@ class _DayCell extends StatelessWidget {
     );
   }
 }
-
