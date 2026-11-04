@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'haptics.dart';
 import 'motion.dart';
 
 class CheckButton extends StatefulWidget {
@@ -54,9 +54,7 @@ class _CheckButtonState extends State<CheckButton>
 
   void _handleTap() {
     // 打卡用較明顯的回饋,取消用較輕的
-    widget.checked
-        ? HapticFeedback.selectionClick()
-        : HapticFeedback.mediumImpact();
+    widget.checked ? Haptics.selection() : Haptics.medium();
     widget.onTap();
   }
 
@@ -101,7 +99,7 @@ class _CheckButtonState extends State<CheckButton>
                           width: 2,
                         ),
                       ),
-                      child: SizedBox.expand(),
+                      child: const SizedBox.expand(),
                     ),
                     // 由內向外擴張的填色
                     ScaleTransition(

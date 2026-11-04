@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/glass_kit.dart';
+import '../../../core/haptics.dart';
 import '../../../core/motion.dart';
 import '../../../core/strings.dart';
 import '../../../core/tokens.dart';
@@ -151,35 +151,30 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
   InputDecoration _dec(String label, {String? hint}) =>
       InputDecoration(labelText: label, hintText: hint);
 
+  /// 區段:卡片外小灰字標題 + 純色卡片
   Widget _section(String title, Widget child) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: Gap.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(left: Gap.sm, bottom: Gap.sm),
-            child: Text(
-              title,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                letterSpacing: 0.5,
-              ),
-            ),
-          ),
-          GlassContainer(
+    final c = IosColors.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionHeader(title),
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.symmetric(horizontal: Gap.lg),
+          padding: const EdgeInsets.all(Gap.lg),
+          decoration: BoxDecoration(
+            color: c.card,
             borderRadius: BorderRadius.circular(Radii.card),
-            padding: const EdgeInsets.all(Gap.lg),
-            child: SizedBox(width: double.infinity, child: child),
           ),
-        ],
-      ),
+          child: child,
+        ),
+      ],
     );
   }
 
   Widget _buildDailyTargetSection(ThemeData theme) {
     final s = S.of(context);
+    final c = IosColors.of(context);
     final editingHigher =
         _isEdit && _dailyTarget > (widget.habit?.dailyTarget ?? 1);
     return _section(
@@ -199,9 +194,8 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                       _dailyTarget == 1
                           ? s.tapOnceDone
                           : s.doneAfter(_dailyTarget),
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(color: c.labelSecondary),
                     ),
                   ],
                 ),
@@ -211,7 +205,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                 icon: const Icon(Icons.remove_circle_outline),
                 onPressed: _dailyTarget > 1
                     ? () {
-                        HapticFeedback.selectionClick();
+                        Haptics.selection();
                         setState(() => _dailyTarget--);
                       }
                     : null,
@@ -233,7 +227,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                 icon: const Icon(Icons.add_circle_outline),
                 onPressed: _dailyTarget < _maxDailyTarget
                     ? () {
-                        HapticFeedback.selectionClick();
+                        Haptics.selection();
                         setState(() => _dailyTarget++);
                       }
                     : null,
@@ -263,6 +257,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
     final color = Color(_colorValue);
     final onColor =
         color.computeLuminance() > 0.6 ? Colors.black87 : Colors.white;
+    final colorChoices = habitColorChoices(widget.habit?.colorValue);
 
     return GlassScaffold(
       appBar: AppBar(title: Text(_isEdit ? s.editHabit : s.newHabit)),
@@ -270,7 +265,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
         key: _formKey,
         child: ListView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+          padding: const EdgeInsets.only(bottom: 40),
           children: [
             _section(
               s.basicInfo,
@@ -314,7 +309,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                           selectedColor: color,
                           showCheckmark: false,
                           onSelected: (_) {
-                            HapticFeedback.selectionClick();
+                            Haptics.selection();
                             setState(() => _iconKey = e.key);
                           },
                         ),
@@ -327,7 +322,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                     spacing: Gap.sm,
                     runSpacing: Gap.sm,
                     children: [
-                      for (final c in habitColors)
+                      for (final c in colorChoices)
                         Semantics(
                           button: true,
                           selected: _colorValue == c,
@@ -335,7 +330,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: () {
-                              HapticFeedback.selectionClick();
+                              Haptics.selection();
                               setState(() => _colorValue = c);
                             },
                             child: SizedBox(
@@ -343,8 +338,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                               height: 44,
                               child: Center(
                                 child: AnimatedContainer(
-                                  duration:
-                                      Motion.of(context, Motion.fast),
+                                  duration: Motion.of(context, Motion.fast),
                                   curve: Motion.enter,
                                   width: _colorValue == c ? 38 : 32,
                                   height: _colorValue == c ? 38 : 32,
@@ -356,8 +350,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                                       ? Icon(
                                           Icons.check,
                                           size: 20,
-                                          color: Color(c)
-                                                      .computeLuminance() >
+                                          color: Color(c).computeLuminance() >
                                                   0.6
                                               ? Colors.black87
                                               : Colors.white,
@@ -391,7 +384,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                             color: color,
                             onColor: onColor,
                             onTap: () {
-                              HapticFeedback.selectionClick();
+                              Haptics.selection();
                               setState(() {
                                 _weekdays = (_weekdays >> i) & 1 == 1
                                     ? _weekdays & ~(1 << i)
@@ -440,7 +433,8 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                   const SizedBox(height: Gap.xs),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.alarm),
+                    leading:
+                        Icon(Icons.alarm, color: theme.colorScheme.primary),
                     title: Text(_remindTime ?? s.notSet),
                     subtitle: Text(s.tapPickTime),
                     onTap: _pickTime,
@@ -456,20 +450,23 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                 ],
               ),
             ),
-            const SizedBox(height: Gap.sm),
-            SizedBox(
-              height: 52,
-              child: FilledButton(
-                onPressed: _saving ? null : _save,
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(52),
-                  backgroundColor: color,
-                  foregroundColor: onColor,
-                ),
-                child: Text(
-                  _saving ? s.saving : s.save,
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(color: onColor),
+            const SizedBox(height: Gap.xl),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Gap.lg),
+              child: SizedBox(
+                height: 52,
+                child: FilledButton(
+                  onPressed: _saving ? null : _save,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(52),
+                    backgroundColor: color,
+                    foregroundColor: onColor,
+                  ),
+                  child: Text(
+                    _saving ? s.saving : s.save,
+                    style:
+                        theme.textTheme.titleMedium?.copyWith(color: onColor),
+                  ),
                 ),
               ),
             ),

@@ -19,10 +19,37 @@ class Gap {
   static const xl = 24.0;
 }
 
-/// 語意色:不再各處直接寫 Colors.xxx
+/// 語意色(iOS 系統色)。fire=橘、trophy=黃、danger=紅
 class Tone {
   Tone._();
-  static const fire = Color(0xFFFF9F0A);
-  static const trophy = Color(0xFFFFC53D);
-  static const danger = Color(0xFFFF453A);
+  static const fire = Color(0xFFFF9500);
+  static const trophy = Color(0xFFFFCC00);
+  static const danger = Color(0xFFFF3B30);
+}
+
+/// iOS 表面與文字色。用法:IosColors.of(context).card
+class IosColors {
+  const IosColors._(this.isDark);
+  final bool isDark;
+
+  factory IosColors.of(BuildContext context) =>
+      IosColors._(Theme.of(context).brightness == Brightness.dark);
+
+  Color _p(Color light, Color dark) => isDark ? dark : light;
+
+  Color get background =>
+      _p(const Color(0xFFF2F2F7), const Color(0xFF000000));
+  Color get card => _p(const Color(0xFFFFFFFF), const Color(0xFF1C1C1E));
+  Color get cardElevated =>
+      _p(const Color(0xFFFFFFFF), const Color(0xFF2C2C2E));
+
+  Color get label => _p(const Color(0xFF000000), const Color(0xFFFFFFFF));
+  Color get labelSecondary =>
+      _p(const Color(0x993C3C43), const Color(0x99EBEBF5));
+  Color get labelTertiary =>
+      _p(const Color(0x4D3C3C43), const Color(0x4DEBEBF5));
+  Color get separator =>
+      _p(const Color(0x4A3C3C43), const Color(0x99545458));
+
+  Color get success => _p(const Color(0xFF34C759), const Color(0xFF30D158));
 }

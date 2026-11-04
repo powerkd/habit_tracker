@@ -66,10 +66,70 @@ class ArchivedPage extends ConsumerWidget {
     }
   }
 
+  Widget _row(BuildContext context, WidgetRef ref, Habit h) {
+    final s = S.of(context);
+    final theme = Theme.of(context);
+    final c = IosColors.of(context);
+    final color = Color(h.colorValue);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(Radii.tile),
+            ),
+            child: Icon(iconFor(h.iconKey), color: color),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  h.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  s.startedOn(h.startDate),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: c.labelSecondary,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: s.restore,
+            color: theme.colorScheme.primary,
+            icon: const Icon(Icons.unarchive_outlined),
+            onPressed: () => ref.read(todayProvider.notifier).restore(h.id!),
+          ),
+          IconButton(
+            tooltip: s.permDelete,
+            color: Tone.danger,
+            icon: const Icon(Icons.delete_outline),
+            onPressed: () => _confirmDelete(context, ref, h),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final s = S.of(context);
     final theme = Theme.of(context);
+    final c = IosColors.of(context);
     final async = ref.watch(archivedProvider);
 
     return GlassScaffold(
@@ -86,7 +146,7 @@ class ArchivedPage extends ConsumerWidget {
                   Icon(
                     Icons.archive_outlined,
                     size: 64,
-                    color: theme.colorScheme.primary.withValues(alpha: 0.5),
+                    color: c.labelTertiary,
                   ),
                   const SizedBox(height: Gap.lg),
                   Text(s.noArchived, style: theme.textTheme.titleMedium),
@@ -94,66 +154,19 @@ class ArchivedPage extends ConsumerWidget {
               ),
             );
           }
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
-            itemCount: list.length,
-            separatorBuilder: (_, _) => const SizedBox(height: Gap.md),
-            itemBuilder: (context, i) {
-              final h = list[i];
-              final color = Color(h.colorValue);
-              return GlassContainer(
-                borderRadius: BorderRadius.circular(Radii.card),
-                padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(Radii.tile),
-                      ),
-                      child: Icon(iconFor(h.iconKey), color: color),
+          return ListView(
+            padding: const EdgeInsets.only(top: Gap.sm, bottom: 40),
+            children: [
+              GroupedCard(
+                children: [
+                  for (final h in list)
+                    KeyedSubtree(
+                      key: ValueKey(h.id),
+                      child: _row(context, ref, h),
                     ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            h.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            s.startedOn(h.startDate),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: s.restore,
-                      icon: const Icon(Icons.unarchive_outlined),
-                      onPressed: () =>
-                          ref.read(todayProvider.notifier).restore(h.id!),
-                    ),
-                    IconButton(
-                      tooltip: s.permDelete,
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => _confirmDelete(context, ref, h),
-                    ),
-                  ],
-                ),
-              );
-            },
+                ],
+              ),
+            ],
           );
         },
       ),

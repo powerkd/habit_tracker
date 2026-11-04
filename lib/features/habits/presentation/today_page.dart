@@ -1,10 +1,11 @@
 import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../../../core/app_settings.dart';
 import '../../../core/check_button.dart';
 import '../../../core/glass_kit.dart';
+import '../../../core/haptics.dart';
 import '../../../core/locale_provider.dart';
 import '../../../core/motion.dart';
 import '../../../core/progress_ring.dart';
@@ -14,7 +15,6 @@ import '../domain/habit_style.dart';
 import 'habit_detail_page.dart';
 import 'habit_form_page.dart';
 import 'habit_providers.dart';
-import '../../settings/settings_page.dart';
 
 class TodayPage extends ConsumerStatefulWidget {
   const TodayPage({super.key});
@@ -61,13 +61,6 @@ class _TodayPageState extends ConsumerState<TodayPage>
     }
   }
 
-  void _openSettings() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const SettingsPage()),
-    );
-  }
-
   void _openForm() {
     Navigator.push(
       context,
@@ -83,7 +76,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
     final messenger = ScaffoldMessenger.of(context);
     final notifier = ref.read(todayProvider.notifier);
 
-    HapticFeedback.mediumImpact();
+    Haptics.medium();
     setState(() => _hidden.add(id));
     try {
       final snap = await notifier.deleteWithSnapshot(id);
@@ -122,12 +115,13 @@ class _TodayPageState extends ConsumerState<TodayPage>
       child: child,
     );
   }
-  
+
   static const _milestones = {7, 30, 100};
 
   /// 連續天數增加並剛好達到里程碑時,提示一次
   void _checkMilestones(List<HabitItem>? prev, List<HabitItem>? next) {
     if (prev == null || next == null) return;
+    if (!ref.read(appSettingsProvider).milestones) return;
     final old = {for (final e in prev) e.habit.id!: e.currentStreak};
     for (final e in next) {
       final before = old[e.habit.id!];
@@ -147,7 +141,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
     await prefs.setBool(key, true);
     if (!mounted) return;
 
-    HapticFeedback.mediumImpact();
+    Haptics.medium();
     final s = S.of(context);
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
@@ -163,9 +157,9 @@ class _TodayPageState extends ConsumerState<TodayPage>
       ));
   }
 
-
   /// 每天只慶祝一次;取消後再完成不會重複彈窗
   Future<void> _celebrateOnce() async {
+    if (!ref.read(appSettingsProvider).celebrate) return;
     final prefs = ref.read(prefsProvider);
     final key =
         'celebrated_${DateFormat('yyyy-MM-dd').format(DateTime.now())}';
@@ -179,7 +173,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
   Future<void> _celebrate() async {
     if (_celebrating) return;
     _celebrating = true;
-    HapticFeedback.heavyImpact();
+    Haptics.heavy();
 
     final reduce = MediaQuery.disableAnimationsOf(context);
     final nav = Navigator.of(context, rootNavigator: true);
@@ -200,6 +194,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
         child: Material(
           color: Colors.transparent,
           child: GlassContainer(
+            blur: 16,
             borderRadius: BorderRadius.circular(Radii.panel),
             padding: const EdgeInsets.all(32),
             child: Column(
@@ -266,17 +261,6 @@ class _TodayPageState extends ConsumerState<TodayPage>
             ),
           ),
           _buildMiniBar(context),
-          // 空狀態中央已有「新增第一個習慣」,不重複顯示膠囊
-          if (async.value?.isNotEmpty ?? false)
-            Positioned(
-              right: 20,
-              bottom: MediaQuery.paddingOf(context).bottom + 20,
-              child: GlassPill(
-                icon: Icons.add_rounded,
-                label: s.addHabit,
-                onPressed: _openForm,
-              ),
-            ),
         ],
       ),
     );
@@ -311,8 +295,8 @@ class _TodayPageState extends ConsumerState<TodayPage>
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: (dark
-                              ? const Color(0xFF0B0F14)
-                              : const Color(0xFFF4F6F8))
+                              ? const Color(0xFF000000)
+                              : const Color(0xFFF2F2F7))
                           .withValues(alpha: 0.8),
                       border: Border(
                         bottom: BorderSide(
@@ -344,34 +328,16 @@ class _TodayPageState extends ConsumerState<TodayPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _dateText(context),
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      scheduled.isEmpty ? s.restToday : s.today,
-                      style: theme.textTheme.headlineLarge,
-                    ),
-                  ],
-                ),
-              ),
-              GlassIconButton(
-                blur: null,
-                icon: Icons.settings_outlined,
-                semanticLabel: s.settings,
-                onPressed: _openSettings,
-              ),
-            ],
+          Text(
+            _dateText(context),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            scheduled.isEmpty ? s.restToday : s.today,
+            style: theme.textTheme.headlineLarge,
           ),
           const SizedBox(height: 16),
           if (scheduled.isEmpty)
@@ -385,8 +351,11 @@ class _TodayPageState extends ConsumerState<TodayPage>
             Semantics(
               label: s.progressLabel(done, scheduled.length),
               excludeSemantics: true,
-              child: GlassContainer(
-                borderRadius: BorderRadius.circular(Radii.card),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: IosColors.of(context).card,
+                  borderRadius: BorderRadius.circular(Radii.card),
+                ),
                 padding: const EdgeInsets.all(16),
                 child: Row(
                   children: [
@@ -436,53 +405,40 @@ class _TodayPageState extends ConsumerState<TodayPage>
   Widget _buildContent(BuildContext context, List<HabitItem> allItems) {
     final s = S.of(context);
     final theme = Theme.of(context);
+    final showRest = ref.watch(appSettingsProvider.select((v) => v.showRest));
     final all = allItems.where((i) => !_hidden.contains(i.habit.id)).toList();
     final wd = DateTime.now().weekday;
     final scheduled = all.where((i) => i.habit.runsOn(wd)).toList();
-    final resting = all.where((i) => !i.habit.runsOn(wd)).toList();
+    final resting =
+        showRest ? all.where((i) => !i.habit.runsOn(wd)).toList() : <HabitItem>[];
 
     if (all.isEmpty) {
-      return Stack(
-        children: [
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.checklist_rounded,
-                      size: 72,
-                      color:
-                          theme.colorScheme.primary.withValues(alpha: 0.5)),
-                  const SizedBox(height: 16),
-                  Text(s.noHabits, style: theme.textTheme.titleLarge),
-                  const SizedBox(height: 8),
-                  Text(
-                    s.noHabitsSub,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: _openForm,
-                    icon: const Icon(Icons.add),
-                    label: Text(s.addFirst),
-                  ),
-                ],
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.checklist_rounded,
+                  size: 72,
+                  color: theme.colorScheme.primary.withValues(alpha: 0.5)),
+              const SizedBox(height: 16),
+              Text(s.noHabits, style: theme.textTheme.titleLarge),
+              const SizedBox(height: 8),
+              Text(
+                s.noHabitsSub,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium,
               ),
-            ),
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                onPressed: _openForm,
+                icon: const Icon(Icons.add),
+                label: Text(s.addFirst),
+              ),
+            ],
           ),
-          Positioned(
-            top: 8,
-            right: 20,
-            child: GlassIconButton(
-              blur: null,
-              icon: Icons.settings_outlined,
-              semanticLabel: s.settings,
-              onPressed: _openSettings,
-            ),
-          ),
-        ],
+        ),
       );
     }
 
@@ -600,7 +556,7 @@ class _HabitCardState extends ConsumerState<_HabitCard> {
               tooltip: s.decrease,
               icon: const Icon(Icons.remove_circle_outline, size: 24),
               onPressed: () {
-                HapticFeedback.lightImpact();
+                Haptics.light();
                 ref.read(todayProvider.notifier).decrement(item.habit.id!);
               },
             ),
@@ -613,7 +569,7 @@ class _HabitCardState extends ConsumerState<_HabitCard> {
             onPressed: done
                 ? null
                 : () {
-                    HapticFeedback.lightImpact();
+                    Haptics.light();
                     ref
                         .read(todayProvider.notifier)
                         .increment(item.habit.id!);
@@ -660,8 +616,12 @@ class _HabitCardState extends ConsumerState<_HabitCard> {
     final target = item.habit.dailyTarget;
     final multi = target > 1;
 
-    final titleColor =
-        resting ? scheme.onSurface.withValues(alpha: 0.5) : scheme.onSurface;
+    // 完成的習慣標題變淡,不再整張卡染色
+    final titleColor = resting
+        ? scheme.onSurface.withValues(alpha: 0.5)
+        : (done
+            ? scheme.onSurface.withValues(alpha: 0.55)
+            : scheme.onSurface);
     final subColor =
         scheme.onSurfaceVariant.withValues(alpha: resting ? 0.6 : 1.0);
     final status = resting
@@ -678,93 +638,85 @@ class _HabitCardState extends ConsumerState<_HabitCard> {
         scale: _down ? 0.98 : 1,
         duration: Motion.of(context, Motion.fast),
         curve: Motion.enter,
-        child: AnimatedContainer(
-          duration: Motion.of(context, Motion.normal),
-          curve: Motion.enter,
+        child: Container(
           decoration: BoxDecoration(
-            color: done && !resting
-                ? color.withValues(alpha: 0.16)
-                : Colors.transparent,
+            color: IosColors.of(context).card,
             borderRadius: BorderRadius.circular(Radii.card),
           ),
-          child: GlassContainer(
-            borderRadius: BorderRadius.circular(Radii.card),
-            padding: EdgeInsets.zero,
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(Radii.card),
-                onHighlightChanged: (v) => setState(() => _down = v),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => HabitDetailPage(
-                      habitId: item.habit.id!,
-                      previewIconKey: item.habit.iconKey,
-                      previewColor: color,
-                    ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(Radii.card),
+              onHighlightChanged: (v) => setState(() => _down = v),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => HabitDetailPage(
+                    habitId: item.habit.id!,
+                    previewIconKey: item.habit.iconKey,
+                    previewColor: color,
                   ),
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
-                  child: Row(
-                    children: [
-                      Hero(
-                        tag: 'habit_icon_${item.habit.id}',
-                        child: Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: color.withValues(
-                                alpha: resting ? 0.08 : 0.18),
-                            borderRadius: BorderRadius.circular(Radii.tile),
-                          ),
-                          child: Icon(
-                            iconFor(item.habit.iconKey),
-                            color: resting
-                                ? color.withValues(alpha: 0.5)
-                                : color,
-                          ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+                child: Row(
+                  children: [
+                    Hero(
+                      tag: 'habit_icon_${item.habit.id}',
+                      child: Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: color.withValues(
+                              alpha: resting ? 0.08 : 0.18),
+                          borderRadius: BorderRadius.circular(Radii.tile),
+                        ),
+                        child: Icon(
+                          iconFor(item.habit.iconKey),
+                          color: resting
+                              ? color.withValues(alpha: 0.5)
+                              : color,
                         ),
                       ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              item.habit.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleMedium
-                                  ?.copyWith(color: titleColor),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${s.streak(item.currentStreak)} · $status',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodyMedium
-                                  ?.copyWith(color: subColor, fontSize: 13),
-                            ),
-                          ],
-                        ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.habit.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleMedium
+                                ?.copyWith(color: titleColor),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${s.streak(item.currentStreak)} · $status',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium
+                                ?.copyWith(color: subColor, fontSize: 13),
+                          ),
+                        ],
                       ),
-                      if (multi)
-                        _buildCounterButtons(
-                          item: item,
-                          color: color,
-                          scheme: scheme,
-                          resting: resting,
-                        )
-                      else
-                        _buildToggleButton(
-                          item: item,
-                          color: color,
-                          resting: resting,
-                        ),
-                    ],
-                  ),
+                    ),
+                    if (multi)
+                      _buildCounterButtons(
+                        item: item,
+                        color: color,
+                        scheme: scheme,
+                        resting: resting,
+                      )
+                    else
+                      _buildToggleButton(
+                        item: item,
+                        color: color,
+                        resting: resting,
+                      ),
+                  ],
                 ),
               ),
             ),

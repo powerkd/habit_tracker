@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../features/habits/presentation/today_page.dart';
-import '../features/settings/settings_providers.dart';
-import '../core/app_navigator.dart';
-import '../core/glass_kit.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import '../core/app_navigator.dart';
+import '../core/app_settings.dart';
+import '../core/app_shell.dart';
+import '../core/glass_kit.dart';
 import '../core/locale_provider.dart';
+import '../features/settings/settings_providers.dart';
 
 class HabitApp extends ConsumerWidget {
   const HabitApp({super.key});
@@ -14,6 +15,7 @@ class HabitApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final locale = ref.watch(localeProvider);
     final mode = ref.watch(themeModeProvider).value ?? ThemeMode.system;
+    final accent = ref.watch(appSettingsProvider.select((s) => s.accentChoice));
 
     return MaterialApp(
       locale: locale,
@@ -27,11 +29,10 @@ class HabitApp extends ConsumerWidget {
       title: '習慣追蹤',
       debugShowCheckedModeBanner: false,
       themeMode: mode,
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
+      theme: AppTheme.light(accent.light),
+      darkTheme: AppTheme.dark(accent.dark),
       builder: (context, child) => GlassBackground(child: child!),
-      // 其他設定(locale、localizationsDelegates 等)保留你原本的
-      home: const TodayPage(),
+      home: const AppShell(),
     );
   }
 }

@@ -2,29 +2,35 @@ import 'dart:math' show max;
 import 'dart:ui';
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'haptics.dart';
 import 'motion.dart';
 import 'tokens.dart';
 
-/// 全域主色,要換色只改這裡
-const kAccent = Color(0xFF14B8A6);
+/// 預設主色(iOS Blue)。使用者選的主題色由 AppTheme 參數傳入
+const kAccent = Color(0xFF007AFF); // 淺色
+const kAccentDark = Color(0xFF0A84FF); // 深色
 
 class AppTheme {
-  static ThemeData light() => _build(Brightness.light);
-  static ThemeData dark() => _build(Brightness.dark);
+  static ThemeData light([Color accent = kAccent]) =>
+      _build(Brightness.light, accent);
+  static ThemeData dark([Color accent = kAccentDark]) =>
+      _build(Brightness.dark, accent);
 
-  static ThemeData _build(Brightness b) {
+  static ThemeData _build(Brightness b, Color accent) {
     final isDark = b == Brightness.dark;
     final scheme = ColorScheme.fromSeed(
-      seedColor: kAccent,
+      seedColor: accent,
       brightness: b,
     ).copyWith(
-      primary: isDark ? const Color(0xFF2DD4BF) : kAccent,
-      surface: isDark ? const Color(0xFF161B22) : Colors.white,
+      primary: accent,
+      onPrimary: Colors.white,
+      surface: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+      error: isDark ? const Color(0xFFFF453A) : const Color(0xFFFF3B30),
     );
 
     return ThemeData(
       useMaterial3: true,
+      fontFamily: 'Inter',
       colorScheme: scheme,
       scaffoldBackgroundColor: Colors.transparent,
       pageTransitionsTheme: const PageTransitionsTheme(builders: {
@@ -86,7 +92,7 @@ class AppTheme {
         ),
       ),
       dialogTheme: DialogThemeData(
-        backgroundColor: isDark ? const Color(0xFF1E252E) : Colors.white,
+        backgroundColor: isDark ? const Color(0xFF2C2C2E) : Colors.white,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(Radii.panel),
@@ -94,17 +100,20 @@ class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
+        // 抬高,避免被底部浮動分頁列蓋住
+        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
         elevation: 0,
         backgroundColor:
-            isDark ? const Color(0xFF2A323C) : const Color(0xFF1F2933),
+            isDark ? const Color(0xFF2C2C2E) : const Color(0xFF1C1C1E),
         contentTextStyle: const TextStyle(color: Colors.white, fontSize: 15),
-        actionTextColor: const Color(0xFF2DD4BF),
+        // 深色底的 SnackBar 上,淺色主題色對比不足,所以固定用較亮的 iOS Blue
+        actionTextColor: isDark ? accent : kAccentDark,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(Radii.control),
         ),
       ),
       bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: isDark ? const Color(0xFF1E252E) : Colors.white,
+        backgroundColor: isDark ? const Color(0xFF2C2C2E) : Colors.white,
         shape: const RoundedRectangleBorder(
           borderRadius:
               BorderRadius.vertical(top: Radius.circular(Radii.panel)),
@@ -131,7 +140,7 @@ class AppTheme {
   }
 }
 
-/// 整頁背景:中性底色加柔和漸層光暈
+/// 整頁背景:iOS 的純灰/純黑,不加彩色光暈
 class GlassBackground extends StatelessWidget {
   final Widget child;
   const GlassBackground({super.key, required this.child});
@@ -143,23 +152,7 @@ class GlassBackground extends StatelessWidget {
       children: [
         Positioned.fill(
           child: ColoredBox(
-            color: dark ? const Color(0xFF0B0F14) : const Color(0xFFF4F6F8),
-          ),
-        ),
-        Positioned(
-          top: -120,
-          left: -100,
-          child: _Glow(
-            size: 360,
-            color: dark ? const Color(0xFF0F3D3A) : const Color(0xFFCFF5EF),
-          ),
-        ),
-        Positioned(
-          bottom: -140,
-          right: -120,
-          child: _Glow(
-            size: 400,
-            color: dark ? const Color(0xFF14213D) : const Color(0xFFD9E6FF),
+            color: dark ? const Color(0xFF000000) : const Color(0xFFF2F2F7),
           ),
         ),
         Positioned.fill(child: child),
@@ -168,30 +161,8 @@ class GlassBackground extends StatelessWidget {
   }
 }
 
-class _Glow extends StatelessWidget {
-  final double size;
-  final Color color;
-  const _Glow({required this.size, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [color, color.withValues(alpha: 0)],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// 玻璃材質容器
-/// blur 為 null(預設)時不做即時模糊,只用半透明填色加高光邊框,效能接近零成本。
+/// blur 為 null(預設)時不做即時模糊,使用不透明的 iOS 卡片色加細邊。
 /// 只有浮在內容上方的元件(按鈕、彈窗)才傳入 blur。
 class GlassContainer extends StatelessWidget {
   final Widget child;
@@ -215,38 +186,28 @@ class GlassContainer extends StatelessWidget {
     final reduce = MediaQuery.disableAnimationsOf(context);
     final useBlur = blur != null && !reduce;
 
-    // 沒有模糊時,填色稍微不透明,避免背景光暈影響文字可讀性
-    final fill = dark
-        ? Colors.white.withValues(alpha: useBlur ? 0.08 : 0.07)
-        : Colors.white.withValues(alpha: useBlur ? 0.55 : 0.72);
-    final hiA = Colors.white.withValues(alpha: dark ? 0.25 : 0.8);
-    final hiB = Colors.white.withValues(alpha: dark ? 0.04 : 0.15);
-    final solid = dark ? const Color(0xFF1E252E) : Colors.white;
+    final base = dark ? const Color(0xFF1C1C1E) : Colors.white;
+    final fill = base.withValues(alpha: useBlur ? 0.72 : 1.0);
+    final edgeA = (dark ? Colors.white : Colors.black)
+        .withValues(alpha: dark ? 0.12 : 0.07);
+    final edgeB = (dark ? Colors.white : Colors.black)
+        .withValues(alpha: dark ? 0.05 : 0.03);
 
-    // 外層漸層當作 1px 高光邊框,內層填色
+    // 外層漸層當作 1px 邊框,內層填色。iOS 卡片是平的,不加陰影
     final content = DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: borderRadius,
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [hiA, hiB],
+          colors: [edgeA, edgeB],
         ),
-        boxShadow: dark
-            ? null
-            : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 18,
-                  offset: const Offset(0, 6),
-                ),
-              ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(1),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: reduce ? solid : fill,
+            color: reduce ? base : fill,
             borderRadius: BorderRadius.only(
               topLeft: _inner(borderRadius.topLeft),
               topRight: _inner(borderRadius.topRight),
@@ -259,7 +220,6 @@ class GlassContainer extends StatelessWidget {
       ),
     );
 
-    // 沒有模糊就不需要 ClipRRect,少一次裁切
     if (!useBlur) return RepaintBoundary(child: content);
 
     return RepaintBoundary(
@@ -274,7 +234,7 @@ class GlassContainer extends StatelessWidget {
   }
 }
 
-/// 玻璃圓形按鈕(取代 FAB)
+/// 玻璃圓形按鈕
 class GlassIconButton extends StatefulWidget {
   final IconData icon;
   final VoidCallback onPressed;
@@ -309,7 +269,7 @@ class _GlassIconButtonState extends State<GlassIconButton> {
         onTapCancel: () => setState(() => _down = false),
         onTapUp: (_) => setState(() => _down = false),
         onTap: () {
-          HapticFeedback.lightImpact();
+          Haptics.light();
           widget.onPressed();
         },
         child: AnimatedScale(
@@ -384,7 +344,7 @@ class _GlassPillState extends State<GlassPill> {
         onTapCancel: () => setState(() => _down = false),
         onTapUp: (_) => setState(() => _down = false),
         onTap: () {
-          HapticFeedback.lightImpact();
+          Haptics.light();
           widget.onPressed();
         },
         child: AnimatedScale(
@@ -416,6 +376,144 @@ class _GlassPillState extends State<GlassPill> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 區段標題:卡片外上方的小灰字
+class SectionHeader extends StatelessWidget {
+  final String text;
+  const SectionHeader(this.text, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = IosColors.of(context);
+    return Padding(
+      padding:
+          const EdgeInsets.fromLTRB(Gap.lg + Gap.xs, Gap.xl, Gap.lg, Gap.sm),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+          color: c.labelSecondary,
+        ),
+      ),
+    );
+  }
+}
+
+/// 分組卡片:多列之間用縮排細線分隔,無邊框無陰影
+class GroupedCard extends StatelessWidget {
+  final List<Widget> children;
+  const GroupedCard({super.key, required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = IosColors.of(context);
+    final rows = <Widget>[];
+    for (var i = 0; i < children.length; i++) {
+      rows.add(children[i]);
+      if (i != children.length - 1) {
+        rows.add(Padding(
+          padding: const EdgeInsets.only(left: Gap.lg),
+          child: Divider(height: 0.5, thickness: 0.5, color: c.separator),
+        ));
+      }
+    }
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: Gap.lg),
+      decoration: BoxDecoration(
+        color: c.card,
+        borderRadius: BorderRadius.circular(Radii.card),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(children: rows),
+    );
+  }
+}
+
+/// 單列:左標題(可含副標),右側為數值或控制項
+class GroupedRow extends StatelessWidget {
+  final String title;
+  final String? subtitle;
+  final Widget? trailing;
+  final IconData? icon;
+  final Color? iconColor;
+  final bool destructive;
+  final VoidCallback? onTap;
+
+  const GroupedRow({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.trailing,
+    this.icon,
+    this.iconColor,
+    this.destructive = false,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = IosColors.of(context);
+    final titleColor = destructive ? Tone.danger : c.label;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+            horizontal: Gap.lg, vertical: Gap.md + 2),
+        child: Row(
+          children: [
+            if (icon != null) ...[
+              Icon(icon,
+                  size: 22,
+                  color: destructive
+                      ? Tone.danger
+                      : (iconColor ?? Theme.of(context).colorScheme.primary)),
+              const SizedBox(width: Gap.md),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: TextStyle(fontSize: 17, color: titleColor)),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(subtitle!,
+                        style: TextStyle(
+                            fontSize: 13, color: c.labelSecondary)),
+                  ],
+                ],
+              ),
+            ),
+            ?trailing,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 右側「數值加上下箭頭」,例如 System ⌃
+class ValueLabel extends StatelessWidget {
+  final String text;
+  final bool accent; // true=藍字(可選單),false=灰字
+  const ValueLabel(this.text, {super.key, this.accent = true});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = IosColors.of(context);
+    final color =
+        accent ? Theme.of(context).colorScheme.primary : c.labelSecondary;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(text, style: TextStyle(fontSize: 17, color: color)),
+        const SizedBox(width: 2),
+        Icon(Icons.unfold_more, size: 18, color: color),
+      ],
     );
   }
 }
