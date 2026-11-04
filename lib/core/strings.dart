@@ -24,7 +24,7 @@ class S {
   String progressLabel(int d, int t) =>
       _t('今日進度 $d／$t', 'Today’s progress $d of $t');
   String doneOf(int d, int t) => _t('已完成 $d／$t', '$d of $t done');
-  String get allDoneEmoji => _t('今天全部完成 🎉', 'All done today 🎉');
+  String get allDoneEmoji => _t('今天全部完成', 'All done today');
   String remaining(int n) => _t('還差 $n 個', '$n to go');
   String get noHabits => _t('還沒有任何習慣', 'No habits yet');
   String get noHabitsSub => _t(
@@ -40,10 +40,14 @@ class S {
       _t('完成一次，目前 $c／$t', 'Add one, now $c of $t');
   String get completed => _t('已完成', 'Done');
   String get notDone => _t('未完成', 'Not done');
-  String streak(int n) =>
-      _t('🔥 $n 天', '🔥 $n ${n == 1 ? 'day' : 'days'}');
+  String streak(int n) => _t('連續 $n 天', '$n-day streak');
   String deleted(String name) => _t('已刪除「$name」', 'Deleted “$name”');
   String deleteFailed(Object e) => _t('刪除失敗：$e', 'Delete failed: $e');
+
+  // 里程碑
+  String milestone(String name, int n) => _t(
+      '「$name」已連續 $n 天,太棒了!',
+      '“$name”: $n-day streak, nice work!');
 
   // 設定頁
   String get appearance => _t('外觀', 'Appearance');
@@ -79,7 +83,7 @@ class S {
       'Long-press the home screen → Widgets → find habit_tracker → drag it onto the home screen.');
   String get ok => _t('知道了', 'OK');
 
-    // ── 星期 ──
+  // ── 星期 ──
   static const _wdZh = ['一', '二', '三', '四', '五', '六', '日'];
   static const _wdEn = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -143,8 +147,8 @@ class S {
   String get reached => _t('已達標', 'Target reached');
   String get doOnce => _t('完成一次', 'Add one');
   String get todayRestDay => _t('今天（休息日）', 'Today (rest day)');
-  String targetPerDay(int n) => _t('🎯 每天 $n 次', '🎯 $n times a day');
-  String remindAt(String t) => _t('⏰ $t 提醒', '⏰ Reminder at $t');
+  String targetPerDay(int n) => _t('每天 $n 次', '$n times a day');
+  String remindAt(String t) => _t('$t 提醒', 'Reminder at $t');
   String get currentStreakLabel => _t('目前連續', 'Current streak');
   String get longestStreakLabel => _t('最長連續', 'Longest streak');
   String get totalDoneLabel => _t('總完成', 'Total done');
@@ -164,7 +168,7 @@ class S {
     required bool scheduled,
   }) {
     final state = done
-        ? _t('✅ 已完成', '✅ Done')
+        ? _t('已完成', 'Done')
         : (multi && count > 0
             ? _t('進行中', 'In progress')
             : _t('尚未完成', 'Not done'));
@@ -186,5 +190,4 @@ class S {
   String get noArchived => _t('沒有已封存的習慣', 'No archived habits');
   String startedOn(String d) => _t('開始於 $d', 'Started $d');
   String get restore => _t('還原', 'Restore');
-
 }

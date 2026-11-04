@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:habit_tracker/core/glass_kit.dart';
 import '../../core/strings.dart';
+import '../../core/tokens.dart';
 import '../habits/domain/habit.dart';
 import '../habits/domain/habit_style.dart';
 import '../habits/presentation/habit_providers.dart';
@@ -26,7 +27,9 @@ class ArchivedPage extends ConsumerWidget {
               child: Text(s.cancel)),
           FilledButton(
             style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(ctx).colorScheme.error),
+              backgroundColor: Tone.danger,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(s.delete),
           ),
@@ -66,6 +69,7 @@ class ArchivedPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final s = S.of(context);
+    final theme = Theme.of(context);
     final async = ref.watch(archivedProvider);
 
     return GlassScaffold(
@@ -75,42 +79,78 @@ class ArchivedPage extends ConsumerWidget {
         error: (e, _) => Center(child: Text(s.loadFailed(e))),
         data: (list) {
           if (list.isEmpty) {
-            return Center(child: Text(s.noArchived));
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.archive_outlined,
+                    size: 64,
+                    color: theme.colorScheme.primary.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(height: Gap.lg),
+                  Text(s.noArchived, style: theme.textTheme.titleMedium),
+                ],
+              ),
+            );
           }
           return ListView.separated(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
             itemCount: list.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            separatorBuilder: (_, _) => const SizedBox(height: Gap.md),
             itemBuilder: (context, i) {
               final h = list[i];
               final color = Color(h.colorValue);
-              return Card(
-                elevation: 0,
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: color.withValues(alpha: 0.15),
-                    child: Icon(iconFor(h.iconKey), color: color),
-                  ),
-                  title: Text(h.name,
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text(s.startedOn(h.startDate)),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        tooltip: s.restore,
-                        icon: const Icon(Icons.unarchive_outlined),
-                        onPressed: () => ref
-                            .read(todayProvider.notifier)
-                            .restore(h.id!),
+              return GlassContainer(
+                borderRadius: BorderRadius.circular(Radii.card),
+                padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(Radii.tile),
                       ),
-                      IconButton(
-                        tooltip: s.permDelete,
-                        icon: const Icon(Icons.delete_outline),
-                        onPressed: () => _confirmDelete(context, ref, h),
+                      child: Icon(iconFor(h.iconKey), color: color),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            h.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            s.startedOn(h.startDate),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                    IconButton(
+                      tooltip: s.restore,
+                      icon: const Icon(Icons.unarchive_outlined),
+                      onPressed: () =>
+                          ref.read(todayProvider.notifier).restore(h.id!),
+                    ),
+                    IconButton(
+                      tooltip: s.permDelete,
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () => _confirmDelete(context, ref, h),
+                    ),
+                  ],
                 ),
               );
             },

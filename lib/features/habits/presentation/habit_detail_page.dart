@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:habit_tracker/core/date_utils.dart';
 import '../../../core/glass_kit.dart';
+import '../../../core/motion.dart';
 import '../../../core/strings.dart';
+import '../../../core/tokens.dart';
 import '../domain/habit_style.dart';
 import '../domain/streak_calculator.dart';
 import '../domain/weekday_utils.dart';
@@ -16,7 +18,17 @@ Color _onColor(Color c) =>
 
 class HabitDetailPage extends ConsumerStatefulWidget {
   final int habitId;
-  const HabitDetailPage({super.key, required this.habitId});
+
+  /// 從今天頁帶入的預覽資訊,讓資料載入前 Hero 就有目標
+  final String? previewIconKey;
+  final Color? previewColor;
+
+  const HabitDetailPage({
+    super.key,
+    required this.habitId,
+    this.previewIconKey,
+    this.previewColor,
+  });
 
   @override
   ConsumerState<HabitDetailPage> createState() => _HabitDetailPageState();
@@ -25,6 +37,19 @@ class HabitDetailPage extends ConsumerStatefulWidget {
 class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
   DateTime _focused = DateTime.now();
   DateTime? _selected;
+
+  Widget _heroIcon(IconData icon, Color color) => Hero(
+        tag: 'habit_icon_${widget.habitId}',
+        child: Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.18),
+            borderRadius: BorderRadius.circular(Radii.tile + 2),
+          ),
+          child: Icon(icon, color: color, size: 28),
+        ),
+      );
 
   Future<void> _confirmArchive(String name) async {
     final s = S.of(context);
@@ -63,6 +88,7 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
     final theme = Theme.of(context);
     final done = count >= target;
     return GlassContainer(
+      borderRadius: BorderRadius.circular(Radii.card),
       padding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
       child: Row(
         children: [
@@ -79,10 +105,20 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
                       style: theme.textTheme.bodyMedium?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant)),
                   const SizedBox(height: 2),
-                  Text(
-                    done ? '$count／$target ✅' : '$count／$target',
-                    style: theme.textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w700),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '$count／$target',
+                        style: theme.textTheme.titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      if (done) ...[
+                        const SizedBox(width: 6),
+                        Icon(Icons.check_circle_rounded,
+                            size: 20, color: color),
+                      ],
+                    ],
                   ),
                 ],
               ),
@@ -120,8 +156,26 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
     return async.when(
       skipLoadingOnReload: true,
       skipLoadingOnRefresh: true,
-      loading: () =>
-          GlassScaffold(appBar: AppBar(), body: const SizedBox.shrink()),
+      loading: () => GlassScaffold(
+        appBar: AppBar(),
+        body: widget.previewIconKey == null
+            ? const SizedBox.shrink()
+            : ListView(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+                children: [
+                  GlassContainer(
+                    borderRadius: BorderRadius.circular(Radii.card),
+                    padding: const EdgeInsets.all(16),
+                    child: Row(children: [
+                      _heroIcon(
+                        iconFor(widget.previewIconKey!),
+                        widget.previewColor ?? kAccent,
+                      ),
+                    ]),
+                  ),
+                ],
+              ),
+      ),
       error: (e, _) => GlassScaffold(
           appBar: AppBar(), body: Center(child: Text(s.loadFailed(e)))),
       data: (d) {
@@ -198,14 +252,11 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
             children: [
               // 標題區
               GlassContainer(
+                borderRadius: BorderRadius.circular(Radii.card),
                 padding: const EdgeInsets.all(16),
                 child: Row(
                   children: [
-                    CircleAvatar(
-                      radius: 28,
-                      backgroundColor: color.withValues(alpha: 0.18),
-                      child: Icon(iconFor(habit.iconKey), color: color),
-                    ),
+                    _heroIcon(iconFor(habit.iconKey), color),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(
@@ -217,10 +268,21 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
                                 style: theme.textTheme.bodyLarge),
                             const SizedBox(height: 4),
                           ],
-                          Text(
-                            '\u{1F5D3} $schedule',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                                color: scheme.onSurfaceVariant),
+                          Row(
+                            children: [
+                              Icon(Icons.calendar_today_rounded,
+                                  size: 14,
+                                  color: scheme.onSurfaceVariant),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  schedule,
+                                  style: theme.textTheme.bodyMedium
+                                      ?.copyWith(
+                                          color: scheme.onSurfaceVariant),
+                                ),
+                              ),
+                            ],
                           ),
                           if (multi) ...[
                             const SizedBox(height: 2),
@@ -250,16 +312,25 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
               Row(
                 children: [
                   _StatBox(
-                      label: s.currentStreakLabel,
-                      value: '\u{1F525} ${s.daysValue(current)}'),
+                    label: s.currentStreakLabel,
+                    value: s.daysValue(current),
+                    icon: Icons.local_fire_department_rounded,
+                    iconColor: Tone.fire,
+                  ),
                   const SizedBox(width: 8),
                   _StatBox(
-                      label: s.longestStreakLabel,
-                      value: '\u{1F3C6} ${s.daysValue(longest)}'),
+                    label: s.longestStreakLabel,
+                    value: s.daysValue(longest),
+                    icon: Icons.emoji_events_rounded,
+                    iconColor: Tone.trophy,
+                  ),
                   const SizedBox(width: 8),
                   _StatBox(
-                      label: s.totalDoneLabel,
-                      value: s.timesValue(d.completedKeys.length)),
+                    label: s.totalDoneLabel,
+                    value: s.timesValue(d.completedKeys.length),
+                    icon: Icons.check_circle_rounded,
+                    iconColor: color,
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -292,44 +363,57 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
               else
                 SizedBox(
                   height: 52,
-                  child: doneToday
-                      ? OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(26)),
+                  child: AnimatedSwitcher(
+                    duration: Motion.of(context, Motion.normal),
+                    switchInCurve: Motion.enter,
+                    switchOutCurve: Motion.exit,
+                    transitionBuilder: (child, anim) => FadeTransition(
+                      opacity: anim,
+                      child: ScaleTransition(
+                        scale: Tween(begin: 0.96, end: 1.0).animate(anim),
+                        child: child,
+                      ),
+                    ),
+                    child: doneToday
+                        ? OutlinedButton.icon(
+                            key: const ValueKey('undo'),
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(52),
+                            ),
+                            icon: const Icon(Icons.undo),
+                            label: Text(s.cancelToday),
+                            onPressed: () {
+                              HapticFeedback.lightImpact();
+                              ref
+                                  .read(todayProvider.notifier)
+                                  .toggle(habit.id!, doneToday);
+                            },
+                          )
+                        : FilledButton.icon(
+                            key: const ValueKey('do'),
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size.fromHeight(52),
+                              backgroundColor: color,
+                              foregroundColor: onColor,
+                            ),
+                            icon: const Icon(Icons.check),
+                            label: Text(todayScheduled
+                                ? s.completeToday
+                                : s.restDayStillCheck),
+                            onPressed: () {
+                              HapticFeedback.lightImpact();
+                              ref
+                                  .read(todayProvider.notifier)
+                                  .toggle(habit.id!, doneToday);
+                            },
                           ),
-                          icon: const Icon(Icons.undo),
-                          label: Text(s.cancelToday),
-                          onPressed: () {
-                            HapticFeedback.lightImpact();
-                            ref
-                                .read(todayProvider.notifier)
-                                .toggle(habit.id!, doneToday);
-                          },
-                        )
-                      : FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: color,
-                            foregroundColor: onColor,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(26)),
-                          ),
-                          icon: const Icon(Icons.check),
-                          label: Text(todayScheduled
-                              ? s.completeToday
-                              : s.restDayStillCheck),
-                          onPressed: () {
-                            HapticFeedback.lightImpact();
-                            ref
-                                .read(todayProvider.notifier)
-                                .toggle(habit.id!, doneToday);
-                          },
-                        ),
+                  ),
                 ),
               const SizedBox(height: 16),
 
               // 日曆
               GlassContainer(
+                borderRadius: BorderRadius.circular(Radii.card),
                 padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
                 child: TableCalendar(
                   locale: Localizations.localeOf(context).toString(),
@@ -365,7 +449,7 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
               ),
               const SizedBox(height: 12),
 
-              // 所選日期狀態（文字，不只靠顏色）
+              // 所選日期狀態(文字,不只靠顏色)
               Center(
                 child: Text(
                   s.dayStatus(
@@ -381,7 +465,7 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
               ),
               const SizedBox(height: 8),
 
-              // 補打／取消所選日期（今天已有上方控制，這裡只處理過去日期）
+              // 補打/取消所選日期(今天已有上方控制,這裡只處理過去日期)
               if (!selectedIsToday)
                 if (multi)
                   _buildCounter(
@@ -411,8 +495,6 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       minimumSize: const Size.fromHeight(48),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(24)),
                     ),
                     icon: Icon(
                         selectedDone ? Icons.undo : Icons.edit_calendar),
@@ -436,7 +518,14 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
 class _StatBox extends StatelessWidget {
   final String label;
   final String value;
-  const _StatBox({required this.label, required this.value});
+  final IconData icon;
+  final Color iconColor;
+  const _StatBox({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.iconColor,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -445,24 +534,24 @@ class _StatBox extends StatelessWidget {
       child: Semantics(
         label: '$label $value',
         excludeSemantics: true,
-        child: Container(
+        child: GlassContainer(
+          borderRadius: BorderRadius.circular(Radii.card),
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
-          decoration: BoxDecoration(
-            color: scheme.surface,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: scheme.outlineVariant.withValues(alpha: 0.5),
-              width: 0.5,
-            ),
-          ),
           child: Column(
             children: [
               FittedBox(
                 fit: BoxFit.scaleDown,
-                child: Text(
-                  value,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w700, fontSize: 16),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, size: 18, color: iconColor),
+                    const SizedBox(width: 4),
+                    Text(
+                      value,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 16),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 4),

@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/glass_kit.dart';
+import '../../../core/motion.dart';
 import '../../../core/strings.dart';
+import '../../../core/tokens.dart';
 import '../domain/habit.dart';
 import '../domain/habit_style.dart';
 import '../domain/weekday_utils.dart';
@@ -145,29 +147,19 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
     }
   }
 
-  InputDecoration _dec(String label, {String? hint}) => InputDecoration(
-        labelText: label,
-        hintText: hint,
-        filled: true,
-        fillColor: Theme.of(context)
-            .colorScheme
-            .onSurface
-            .withValues(alpha: 0.05),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide.none,
-        ),
-      );
+  /// 填色與圓角由 ThemeData.inputDecorationTheme 提供
+  InputDecoration _dec(String label, {String? hint}) =>
+      InputDecoration(labelText: label, hintText: hint);
 
   Widget _section(String title, Widget child) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.only(bottom: Gap.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.only(left: 8, bottom: 8),
+            padding: const EdgeInsets.only(left: Gap.sm, bottom: Gap.sm),
             child: Text(
               title,
               style: theme.textTheme.labelSmall?.copyWith(
@@ -177,7 +169,8 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
             ),
           ),
           GlassContainer(
-            padding: const EdgeInsets.all(16),
+            borderRadius: BorderRadius.circular(Radii.card),
+            padding: const EdgeInsets.all(Gap.lg),
             child: SizedBox(width: double.infinity, child: child),
           ),
         ],
@@ -249,11 +242,11 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
           ),
           if (editingHigher)
             Padding(
-              padding: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.only(top: Gap.sm),
               child: Text(
                 s.raiseWarn,
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.error,
+                  color: Tone.danger,
                   fontSize: 13,
                 ),
               ),
@@ -292,7 +285,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                         ? s.nameRequired
                         : null,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: Gap.md),
                   TextFormField(
                     controller: _desc,
                     maxLength: 100,
@@ -308,7 +301,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(s.iconLabel, style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: Gap.sm),
                   Wrap(
                     spacing: 10,
                     runSpacing: 10,
@@ -329,10 +322,10 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                   ),
                   const SizedBox(height: 20),
                   Text(s.colorLabel, style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: Gap.sm),
                   Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                    spacing: Gap.sm,
+                    runSpacing: Gap.sm,
                     children: [
                       for (final c in habitColors)
                         Semantics(
@@ -350,7 +343,9 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                               height: 44,
                               child: Center(
                                 child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 150),
+                                  duration:
+                                      Motion.of(context, Motion.fast),
+                                  curve: Motion.enter,
                                   width: _colorValue == c ? 38 : 32,
                                   height: _colorValue == c ? 38 : 32,
                                   decoration: BoxDecoration(
@@ -385,7 +380,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(s.repeat, style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: Gap.md),
                   Row(
                     children: [
                       for (var i = 0; i < 7; i++)
@@ -407,9 +402,9 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                         ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: Gap.md),
                   Wrap(
-                    spacing: 8,
+                    spacing: Gap.sm,
                     children: [
                       ChoiceChip(
                         label: Text(s.everyDay),
@@ -433,16 +428,16 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                   ),
                   if (_weekdays == 0)
                     Padding(
-                      padding: const EdgeInsets.only(top: 8),
+                      padding: const EdgeInsets.only(top: Gap.sm),
                       child: Text(
                         s.pickAtLeastOne,
                         style: theme.textTheme.bodyMedium
-                            ?.copyWith(color: theme.colorScheme.error),
+                            ?.copyWith(color: Tone.danger),
                       ),
                     ),
                   const SizedBox(height: 20),
                   Text(s.reminder, style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: Gap.xs),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.alarm),
@@ -461,17 +456,15 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                 ],
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: Gap.sm),
             SizedBox(
               height: 52,
               child: FilledButton(
                 onPressed: _saving ? null : _save,
                 style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
                   backgroundColor: color,
                   foregroundColor: onColor,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(26),
-                  ),
                 ),
                 child: Text(
                   _saving ? s.saving : s.save,
@@ -516,8 +509,8 @@ class _DayButton extends StatelessWidget {
         onTap: onTap,
         child: Center(
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            curve: Curves.easeOutCubic,
+            duration: Motion.of(context, Motion.fast),
+            curve: Motion.enter,
             width: 38,
             height: 38,
             alignment: Alignment.center,

@@ -3,9 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../../../core/check_button.dart';
 import '../../../core/glass_kit.dart';
+import '../../../core/locale_provider.dart';
+import '../../../core/motion.dart';
 import '../../../core/progress_ring.dart';
 import '../../../core/strings.dart';
+import '../../../core/tokens.dart';
 import '../domain/habit_style.dart';
 import 'habit_detail_page.dart';
 import 'habit_form_page.dart';
@@ -25,7 +29,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
   final _scroll = ScrollController();
   final _offset = ValueNotifier<double>(0);
 
-  /// 已滑掉、正在等資料庫刪除的習慣，先從畫面移除
+  /// 已滑掉、正在等資料庫刪除的習慣,先從畫面移除
   final _hidden = <int>{};
 
   String _dateText(BuildContext context) => DateFormat.yMMMd(
@@ -49,7 +53,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
     super.dispose();
   }
 
-  // App 回到前景時重新載入（處理跨日）
+  // App 回到前景時重新載入(處理跨日)
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -71,7 +75,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
     );
   }
 
-  /// 右滑刪除：先從畫面移除，再刪資料庫，並提供「復原」
+  /// 右滑刪除:先從畫面移除,再刪資料庫,並提供「復原」
   Future<void> _delete(HabitItem item) async {
     final id = item.habit.id!;
     final name = item.habit.name;
@@ -105,18 +109,70 @@ class _TodayPageState extends ConsumerState<TodayPage>
       key: ValueKey('del_${item.habit.id}'),
       direction: DismissDirection.startToEnd,
       background: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.only(left: 24),
+        margin: const EdgeInsets.only(bottom: Gap.md),
+        padding: const EdgeInsets.only(left: Gap.xl),
         alignment: Alignment.centerLeft,
         decoration: BoxDecoration(
-          color: Colors.red.withValues(alpha: 0.85),
-          borderRadius: BorderRadius.circular(24),
+          color: Tone.danger.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(Radii.card),
         ),
         child: const Icon(Icons.delete_outline, color: Colors.white),
       ),
       onDismissed: (_) => _delete(item),
       child: child,
     );
+  }
+  
+  static const _milestones = {7, 30, 100};
+
+  /// 連續天數增加並剛好達到里程碑時,提示一次
+  void _checkMilestones(List<HabitItem>? prev, List<HabitItem>? next) {
+    if (prev == null || next == null) return;
+    final old = {for (final e in prev) e.habit.id!: e.currentStreak};
+    for (final e in next) {
+      final before = old[e.habit.id!];
+      if (before == null) continue;
+      final now = e.currentStreak;
+      if (now > before && _milestones.contains(now)) {
+        _showMilestone(e.habit.id!, e.habit.name, now);
+        break; // 一次最多提示一個
+      }
+    }
+  }
+
+  Future<void> _showMilestone(int id, String name, int days) async {
+    final prefs = ref.read(prefsProvider);
+    final key = 'milestone_${id}_$days';
+    if (prefs.getBool(key) ?? false) return;
+    await prefs.setBool(key, true);
+    if (!mounted) return;
+
+    HapticFeedback.mediumImpact();
+    final s = S.of(context);
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.local_fire_department_rounded,
+                color: Tone.fire),
+            const SizedBox(width: Gap.md),
+            Expanded(child: Text(s.milestone(name, days))),
+          ],
+        ),
+      ));
+  }
+
+
+  /// 每天只慶祝一次;取消後再完成不會重複彈窗
+  Future<void> _celebrateOnce() async {
+    final prefs = ref.read(prefsProvider);
+    final key =
+        'celebrated_${DateFormat('yyyy-MM-dd').format(DateTime.now())}';
+    if (prefs.getBool(key) ?? false) return;
+    await prefs.setBool(key, true);
+    if (!mounted) return;
+    _celebrate();
   }
 
   /// 全部完成時的慶祝動畫
@@ -139,18 +195,18 @@ class _TodayPageState extends ConsumerState<TodayPage>
       barrierDismissible: true,
       barrierLabel: s.celebrate,
       barrierColor: Colors.black38,
-      transitionDuration:
-          reduce ? Duration.zero : const Duration(milliseconds: 380),
+      transitionDuration: reduce ? Duration.zero : Motion.slow,
       pageBuilder: (ctx, _, _) => Center(
         child: Material(
           color: Colors.transparent,
           child: GlassContainer(
-            borderRadius: const BorderRadius.all(Radius.circular(28)),
+            borderRadius: BorderRadius.circular(Radii.panel),
             padding: const EdgeInsets.all(32),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('\u{1F389}', style: TextStyle(fontSize: 64)),
+                Icon(Icons.celebration_rounded,
+                    size: 64, color: Tone.trophy),
                 const SizedBox(height: 8),
                 Text(s.allDoneTitle,
                     style: const TextStyle(
@@ -163,8 +219,8 @@ class _TodayPageState extends ConsumerState<TodayPage>
       transitionBuilder: (ctx, anim, _, child) {
         final curved = CurvedAnimation(
           parent: anim,
-          curve: Curves.easeOutBack,
-          reverseCurve: Curves.easeInCubic,
+          curve: Motion.emphasize,
+          reverseCurve: Motion.exit,
         );
         return FadeTransition(
           opacity: anim,
@@ -186,13 +242,14 @@ class _TodayPageState extends ConsumerState<TodayPage>
     final async = ref.watch(todayProvider);
 
     ref.listen(todayProvider, (prev, next) {
+      _checkMilestones(prev?.value, next.value);
       final wd = DateTime.now().weekday;
       final before = prev?.value?.where((e) => e.habit.runsOn(wd)).toList();
       final after = next.value?.where((e) => e.habit.runsOn(wd)).toList();
       if (before == null || after == null || after.isEmpty) return;
       final wasAll = before.isNotEmpty && before.every((e) => e.doneToday);
       final nowAll = after.every((e) => e.doneToday);
-      if (!wasAll && nowAll) _celebrate();
+      if (!wasAll && nowAll) _celebrateOnce();
     });
 
     return GlassScaffold(
@@ -209,7 +266,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
             ),
           ),
           _buildMiniBar(context),
-          // 空狀態中央已有「新增第一個習慣」，不重複顯示膠囊
+          // 空狀態中央已有「新增第一個習慣」,不重複顯示膠囊
           if (async.value?.isNotEmpty ?? false)
             Positioned(
               right: 20,
@@ -225,7 +282,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
     );
   }
 
-  /// 捲動超過大標題後，從頂部淡入的迷你標題列
+  /// 捲動超過大標題後,從頂部淡入的迷你標題列
   Widget _buildMiniBar(BuildContext context) {
     final theme = Theme.of(context);
     final dark = theme.brightness == Brightness.dark;
@@ -329,15 +386,21 @@ class _TodayPageState extends ConsumerState<TodayPage>
               label: s.progressLabel(done, scheduled.length),
               excludeSemantics: true,
               child: GlassContainer(
+                borderRadius: BorderRadius.circular(Radii.card),
                 padding: const EdgeInsets.all(16),
                 child: Row(
                   children: [
-                    ProgressRing(
-                      progress: done / scheduled.length,
-                      child: Text(
-                        '${(done / scheduled.length * 100).round()}%',
-                        style: theme.textTheme.labelSmall
-                            ?.copyWith(fontWeight: FontWeight.w700),
+                    TweenAnimationBuilder<double>(
+                      tween: Tween(end: done / scheduled.length),
+                      duration: Motion.of(context, Motion.slow),
+                      curve: Motion.enter,
+                      builder: (context, v, _) => ProgressRing(
+                        progress: v,
+                        child: Text(
+                          '${(v * 100).round()}%',
+                          style: theme.textTheme.labelSmall
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -435,7 +498,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
       proxyDecorator: (child, index, anim) => AnimatedBuilder(
         animation: anim,
         builder: (ctx, c) {
-          final t = Curves.easeOutCubic.transform(anim.value);
+          final t = Motion.enter.transform(anim.value);
           return Transform.scale(
             scale: 1 + 0.03 * t,
             child: Material(type: MaterialType.transparency, child: c),
@@ -493,44 +556,22 @@ class _HabitCard extends ConsumerStatefulWidget {
 class _HabitCardState extends ConsumerState<_HabitCard> {
   bool _down = false;
 
-  /// 單次習慣:原本的勾選按鈕
+  /// 單次習慣:自訂打卡按鈕(填色擴張 + 勾選回彈,可中斷)
   Widget _buildToggleButton({
     required HabitItem item,
     required Color color,
-    required ColorScheme scheme,
-    required bool reduce,
     required bool resting,
   }) {
     final s = S.of(context);
     final done = item.doneToday;
-    return SizedBox(
-      width: 48,
-      height: 48,
-      child: IconButton(
-        tooltip: done ? s.uncheck : s.check,
-        icon: AnimatedSwitcher(
-          duration:
-              reduce ? Duration.zero : const Duration(milliseconds: 320),
-          transitionBuilder: (child, anim) => ScaleTransition(
-            scale: CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
-            child: child,
-          ),
-          child: Icon(
-            done ? Icons.check_circle : Icons.circle_outlined,
-            key: ValueKey(done),
-            size: 32,
-            color: done
-                ? color
-                : scheme.outline.withValues(alpha: resting ? 0.5 : 1.0),
-          ),
-        ),
-        onPressed: () {
-          HapticFeedback.lightImpact();
-          ref
-              .read(todayProvider.notifier)
-              .toggle(item.habit.id!, item.doneToday);
-        },
-      ),
+    return CheckButton(
+      checked: done,
+      size: 30,
+      color: resting ? color.withValues(alpha: 0.5) : color,
+      semanticLabel: done ? s.uncheck : s.check,
+      onTap: () => ref
+          .read(todayProvider.notifier)
+          .toggle(item.habit.id!, item.doneToday),
     );
   }
 
@@ -583,11 +624,17 @@ class _HabitCardState extends ConsumerState<_HabitCard> {
                 SizedBox(
                   width: 34,
                   height: 34,
-                  child: CircularProgressIndicator(
-                    value: (count / target).clamp(0.0, 1.0),
-                    strokeWidth: 3.5,
-                    backgroundColor: scheme.outline.withValues(alpha: 0.25),
-                    color: ringColor,
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(end: (count / target).clamp(0.0, 1.0)),
+                    duration: Motion.of(context, Motion.normal),
+                    curve: Motion.enter,
+                    builder: (context, v, _) => CircularProgressIndicator(
+                      value: v,
+                      strokeWidth: 3.5,
+                      backgroundColor:
+                          scheme.outline.withValues(alpha: 0.25),
+                      color: ringColor,
+                    ),
                   ),
                 ),
                 Icon(done ? Icons.check : Icons.add,
@@ -609,7 +656,6 @@ class _HabitCardState extends ConsumerState<_HabitCard> {
     final scheme = theme.colorScheme;
     final color = Color(item.habit.colorValue);
     final done = item.doneToday;
-    final reduce = MediaQuery.disableAnimationsOf(context);
 
     final target = item.habit.dailyTarget;
     final multi = target > 1;
@@ -627,51 +673,58 @@ class _HabitCardState extends ConsumerState<_HabitCard> {
                 : s.notDone;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: Gap.md),
       child: AnimatedScale(
         scale: _down ? 0.98 : 1,
-        duration: reduce ? Duration.zero : const Duration(milliseconds: 120),
-        curve: Curves.easeOutCubic,
+        duration: Motion.of(context, Motion.fast),
+        curve: Motion.enter,
         child: AnimatedContainer(
-          duration:
-              reduce ? Duration.zero : const Duration(milliseconds: 250),
-          curve: Curves.easeOutCubic,
+          duration: Motion.of(context, Motion.normal),
+          curve: Motion.enter,
           decoration: BoxDecoration(
             color: done && !resting
                 ? color.withValues(alpha: 0.16)
                 : Colors.transparent,
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(Radii.card),
           ),
           child: GlassContainer(
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(Radii.card),
             padding: EdgeInsets.zero,
             child: Material(
               color: Colors.transparent,
               child: InkWell(
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(Radii.card),
                 onHighlightChanged: (v) => setState(() => _down = v),
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => HabitDetailPage(habitId: item.habit.id!),
+                    builder: (_) => HabitDetailPage(
+                      habitId: item.habit.id!,
+                      previewIconKey: item.habit.iconKey,
+                      previewColor: color,
+                    ),
                   ),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
                   child: Row(
                     children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color:
-                              color.withValues(alpha: resting ? 0.08 : 0.18),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Icon(
-                          iconFor(item.habit.iconKey),
-                          color:
-                              resting ? color.withValues(alpha: 0.5) : color,
+                      Hero(
+                        tag: 'habit_icon_${item.habit.id}',
+                        child: Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: color.withValues(
+                                alpha: resting ? 0.08 : 0.18),
+                            borderRadius: BorderRadius.circular(Radii.tile),
+                          ),
+                          child: Icon(
+                            iconFor(item.habit.iconKey),
+                            color: resting
+                                ? color.withValues(alpha: 0.5)
+                                : color,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 14),
@@ -708,8 +761,6 @@ class _HabitCardState extends ConsumerState<_HabitCard> {
                         _buildToggleButton(
                           item: item,
                           color: color,
-                          scheme: scheme,
-                          reduce: reduce,
                           resting: resting,
                         ),
                     ],

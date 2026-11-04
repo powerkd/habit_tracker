@@ -10,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/glass_kit.dart';
 import '../../core/strings.dart';
+import '../../core/tokens.dart';
 import '../../core/widget_service.dart';
 import '../habits/presentation/habit_providers.dart';
 import 'archived_page.dart';
@@ -47,8 +48,8 @@ class SettingsPage extends ConsumerWidget {
               child: Text(s.cancel)),
           FilledButton(
               style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(ctx).colorScheme.error,
-                foregroundColor: Theme.of(ctx).colorScheme.onError,
+                backgroundColor: Tone.danger,
+                foregroundColor: Colors.white,
               ),
               onPressed: () => Navigator.pop(ctx, true),
               child: Text(s.pickFile)),
@@ -108,7 +109,7 @@ class SettingsPage extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.only(left: 8, bottom: 8),
+            padding: const EdgeInsets.only(left: Gap.sm, bottom: Gap.sm),
             child: Text(
               title,
               style: theme.textTheme.labelSmall?.copyWith(
@@ -118,7 +119,8 @@ class SettingsPage extends ConsumerWidget {
             ),
           ),
           GlassContainer(
-            padding: const EdgeInsets.all(8),
+            borderRadius: BorderRadius.circular(Radii.card),
+            padding: const EdgeInsets.all(Gap.sm),
             child: SizedBox(width: double.infinity, child: child),
           ),
         ],
@@ -141,7 +143,7 @@ class SettingsPage extends ConsumerWidget {
             context,
             s.appearance,
             Padding(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(Gap.sm),
               child: SegmentedButton<ThemeMode>(
                 showSelectedIcon: false,
                 segments: [
@@ -168,7 +170,7 @@ class SettingsPage extends ConsumerWidget {
             context,
             s.language,
             Padding(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(Gap.sm),
               child: SegmentedButton<String>(
                 showSelectedIcon: false,
                 segments: const [
@@ -235,13 +237,8 @@ class _Divider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Divider(
-      height: 1,
-      indent: 64,
-      endIndent: 8,
-      thickness: 0.5,
-      color: Theme.of(context).colorScheme.outlineVariant,
-    );
+    // 粗細與顏色來自 ThemeData.dividerTheme
+    return const Divider(height: 1, indent: 64, endIndent: Gap.sm);
   }
 }
 
@@ -264,13 +261,14 @@ class _SettingsTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return ListTile(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Radii.control)),
       leading: Container(
         width: 40,
         height: 40,
         decoration: BoxDecoration(
           color: scheme.primary.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(Radii.tile),
         ),
         child: Icon(icon, color: scheme.primary, size: 22),
       ),

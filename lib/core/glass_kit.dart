@@ -3,6 +3,8 @@ import 'dart:ui';
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'motion.dart';
+import 'tokens.dart';
 
 /// 全域主色,要換色只改這裡
 const kAccent = Color(0xFF14B8A6);
@@ -48,13 +50,82 @@ class AppTheme {
         margin: EdgeInsets.zero,
         color: scheme.surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(Radii.card),
           side: BorderSide(
             color:
                 (isDark ? Colors.white : Colors.black).withValues(alpha: 0.06),
             width: 0.5,
           ),
         ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size(64, 48),
+          shape: const StadiumBorder(),
+          textStyle:
+              const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(64, 48),
+          shape: const StadiumBorder(),
+          side: BorderSide(
+            color: (isDark ? Colors.white : Colors.black)
+                .withValues(alpha: 0.15),
+          ),
+          textStyle:
+              const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          shape: const StadiumBorder(),
+          textStyle:
+              const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: isDark ? const Color(0xFF1E252E) : Colors.white,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Radii.panel),
+        ),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        elevation: 0,
+        backgroundColor:
+            isDark ? const Color(0xFF2A323C) : const Color(0xFF1F2933),
+        contentTextStyle: const TextStyle(color: Colors.white, fontSize: 15),
+        actionTextColor: const Color(0xFF2DD4BF),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Radii.control),
+        ),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: isDark ? const Color(0xFF1E252E) : Colors.white,
+        shape: const RoundedRectangleBorder(
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(Radii.panel)),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: (isDark ? Colors.white : Colors.black)
+            .withValues(alpha: isDark ? 0.07 : 0.04),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(Radii.control),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(Radii.control),
+          borderSide: BorderSide(color: scheme.primary, width: 1.5),
+        ),
+      ),
+      dividerTheme: DividerThemeData(
+        thickness: 0.5,
+        color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.08),
       ),
     );
   }
@@ -120,8 +191,8 @@ class _Glow extends StatelessWidget {
 }
 
 /// 玻璃材質容器
-/// blur 為 null（預設）時不做即時模糊，只用半透明填色加高光邊框，效能接近零成本。
-/// 只有浮在內容上方的元件（按鈕、彈窗）才傳入 blur。
+/// blur 為 null(預設)時不做即時模糊,只用半透明填色加高光邊框,效能接近零成本。
+/// 只有浮在內容上方的元件(按鈕、彈窗)才傳入 blur。
 class GlassContainer extends StatelessWidget {
   final Widget child;
   final BorderRadius borderRadius;
@@ -131,7 +202,7 @@ class GlassContainer extends StatelessWidget {
   const GlassContainer({
     super.key,
     required this.child,
-    this.borderRadius = const BorderRadius.all(Radius.circular(28)),
+    this.borderRadius = const BorderRadius.all(Radius.circular(Radii.panel)),
     this.padding = const EdgeInsets.all(12),
     this.blur,
   });
@@ -161,6 +232,15 @@ class GlassContainer extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: [hiA, hiB],
         ),
+        boxShadow: dark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
+                ),
+              ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(1),
@@ -234,11 +314,11 @@ class _GlassIconButtonState extends State<GlassIconButton> {
         },
         child: AnimatedScale(
           scale: _down ? 0.92 : 1,
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOutCubic,
+          duration: Motion.of(context, Motion.fast),
+          curve: Motion.enter,
           child: GlassContainer(
             blur: widget.blur,
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: BorderRadius.circular(Radii.panel),
             padding: EdgeInsets.zero,
             child: SizedBox(
               width: 54,
@@ -252,7 +332,7 @@ class _GlassIconButtonState extends State<GlassIconButton> {
   }
 }
 
-/// 自帶背景的 Scaffold。背景在 Scaffold 外層，連 AppBar 區域都不透明,
+/// 自帶背景的 Scaffold。背景在 Scaffold 外層,連 AppBar 區域都不透明,
 /// 所以頁面轉場時不會透出前一頁。
 class GlassScaffold extends StatelessWidget {
   final PreferredSizeWidget? appBar;
@@ -272,7 +352,7 @@ class GlassScaffold extends StatelessWidget {
   }
 }
 
-/// 玻璃膠囊按鈕（圖示＋文字），浮在清單上方，所以保留模糊
+/// 玻璃膠囊按鈕(圖示+文字),浮在清單上方,所以保留模糊
 class GlassPill extends StatefulWidget {
   final IconData icon;
   final String label;
@@ -309,11 +389,11 @@ class _GlassPillState extends State<GlassPill> {
         },
         child: AnimatedScale(
           scale: _down ? 0.94 : 1,
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOutCubic,
+          duration: Motion.of(context, Motion.fast),
+          curve: Motion.enter,
           child: GlassContainer(
             blur: 16,
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: BorderRadius.circular(Radii.panel),
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: SizedBox(
               height: 54,
@@ -339,4 +419,3 @@ class _GlassPillState extends State<GlassPill> {
     );
   }
 }
-
