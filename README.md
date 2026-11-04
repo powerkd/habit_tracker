@@ -30,6 +30,7 @@
 
 ```text
 lib/
+├── app/                   # App 入口、主題、路由
 ├── core/                  # 共用工具與元件
 │   ├── date_utils.dart    # 日期鍵 YYYY-MM-DD
 │   ├── glass_kit.dart     # 玻璃風格元件
