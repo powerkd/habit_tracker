@@ -2,8 +2,10 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import '../../../core/glass_kit.dart';
 import '../../../core/progress_ring.dart';
+import '../../../core/strings.dart';
 import '../domain/habit_style.dart';
 import 'habit_detail_page.dart';
 import 'habit_form_page.dart';
@@ -23,10 +25,12 @@ class _TodayPageState extends ConsumerState<TodayPage>
   final _scroll = ScrollController();
   final _offset = ValueNotifier<double>(0);
 
-  String get dateText {
-    final now = DateTime.now();
-    return '${now.year}年${now.month}月${now.day}日';
-  }
+  /// 已滑掉、正在等資料庫刪除的習慣，先從畫面移除
+  final _hidden = <int>{};
+
+  String _dateText(BuildContext context) => DateFormat.yMMMd(
+        Localizations.localeOf(context).toString(),
+      ).format(DateTime.now());
 
   @override
   void initState() {
@@ -67,6 +71,54 @@ class _TodayPageState extends ConsumerState<TodayPage>
     );
   }
 
+  /// 右滑刪除：先從畫面移除，再刪資料庫，並提供「復原」
+  Future<void> _delete(HabitItem item) async {
+    final id = item.habit.id!;
+    final name = item.habit.name;
+    final s = S.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final notifier = ref.read(todayProvider.notifier);
+
+    HapticFeedback.mediumImpact();
+    setState(() => _hidden.add(id));
+    try {
+      final snap = await notifier.deleteWithSnapshot(id);
+      messenger.clearSnackBars();
+      if (snap != null) {
+        messenger.showSnackBar(SnackBar(
+          content: Text(s.deleted(name)),
+          action: SnackBarAction(
+            label: s.undo,
+            onPressed: () => notifier.restoreDeleted(snap),
+          ),
+        ));
+      }
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(s.deleteFailed(e))));
+    } finally {
+      if (mounted) setState(() => _hidden.remove(id));
+    }
+  }
+
+  Widget _swipeToDelete(HabitItem item, Widget child) {
+    return Dismissible(
+      key: ValueKey('del_${item.habit.id}'),
+      direction: DismissDirection.startToEnd,
+      background: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.only(left: 24),
+        alignment: Alignment.centerLeft,
+        decoration: BoxDecoration(
+          color: Colors.red.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: const Icon(Icons.delete_outline, color: Colors.white),
+      ),
+      onDismissed: (_) => _delete(item),
+      child: child,
+    );
+  }
+
   /// 全部完成時的慶祝動畫
   Future<void> _celebrate() async {
     if (_celebrating) return;
@@ -75,6 +127,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
 
     final reduce = MediaQuery.disableAnimationsOf(context);
     final nav = Navigator.of(context, rootNavigator: true);
+    final s = S.of(context);
     var open = true;
 
     Future.delayed(const Duration(milliseconds: 1600), () {
@@ -84,24 +137,24 @@ class _TodayPageState extends ConsumerState<TodayPage>
     await showGeneralDialog(
       context: context,
       barrierDismissible: true,
-      barrierLabel: '慶祝',
+      barrierLabel: s.celebrate,
       barrierColor: Colors.black38,
       transitionDuration:
           reduce ? Duration.zero : const Duration(milliseconds: 380),
-      pageBuilder: (ctx, _, _) => const Center(
+      pageBuilder: (ctx, _, _) => Center(
         child: Material(
           color: Colors.transparent,
           child: GlassContainer(
-            borderRadius: BorderRadius.all(Radius.circular(28)),
-            padding: EdgeInsets.all(32),
+            borderRadius: const BorderRadius.all(Radius.circular(28)),
+            padding: const EdgeInsets.all(32),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('🎉', style: TextStyle(fontSize: 64)),
-                SizedBox(height: 8),
-                Text('今天全部完成！',
-                    style:
-                        TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                const Text('\u{1F389}', style: TextStyle(fontSize: 64)),
+                const SizedBox(height: 8),
+                Text(s.allDoneTitle,
+                    style: const TextStyle(
+                        fontSize: 20, fontWeight: FontWeight.bold)),
               ],
             ),
           ),
@@ -129,6 +182,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
 
   @override
   Widget build(BuildContext context) {
+    final s = S.of(context);
     final async = ref.watch(todayProvider);
 
     ref.listen(todayProvider, (prev, next) {
@@ -150,7 +204,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
               skipLoadingOnReload: true,
               skipLoadingOnRefresh: true,
               loading: () => const SizedBox.shrink(),
-              error: (e, _) => Center(child: Text('載入失敗：$e')),
+              error: (e, _) => Center(child: Text(s.loadFailed(e))),
               data: (all) => _buildContent(context, all),
             ),
           ),
@@ -162,7 +216,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
               bottom: MediaQuery.paddingOf(context).bottom + 20,
               child: GlassPill(
                 icon: Icons.add_rounded,
-                label: '新增習慣',
+                label: s.addHabit,
                 onPressed: _openForm,
               ),
             ),
@@ -176,6 +230,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
     final theme = Theme.of(context);
     final dark = theme.brightness == Brightness.dark;
     final top = MediaQuery.paddingOf(context).top;
+    final title = S.of(context).today;
 
     return Positioned(
       top: 0,
@@ -210,7 +265,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
                         ),
                       ),
                     ),
-                    child: Text('今天', style: theme.textTheme.titleMedium),
+                    child: Text(title, style: theme.textTheme.titleMedium),
                   ),
                 ),
               ),
@@ -226,6 +281,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
     List<HabitItem> scheduled,
     int done,
   ) {
+    final s = S.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 20),
       child: Column(
@@ -239,14 +295,14 @@ class _TodayPageState extends ConsumerState<TodayPage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      dateText,
+                      _dateText(context),
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      scheduled.isEmpty ? '今天休息' : '今天',
+                      scheduled.isEmpty ? s.restToday : s.today,
                       style: theme.textTheme.headlineLarge,
                     ),
                   ],
@@ -255,7 +311,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
               GlassIconButton(
                 blur: null,
                 icon: Icons.settings_outlined,
-                semanticLabel: '設定',
+                semanticLabel: s.settings,
                 onPressed: _openSettings,
               ),
             ],
@@ -263,14 +319,14 @@ class _TodayPageState extends ConsumerState<TodayPage>
           const SizedBox(height: 16),
           if (scheduled.isEmpty)
             Text(
-              '沒有排程的習慣',
+              s.noScheduled,
               style: theme.textTheme.titleMedium?.copyWith(
                 color: theme.colorScheme.primary,
               ),
             )
           else
             Semantics(
-              label: '今日進度 $done／${scheduled.length}',
+              label: s.progressLabel(done, scheduled.length),
               excludeSemantics: true,
               child: GlassContainer(
                 padding: const EdgeInsets.all(16),
@@ -290,14 +346,14 @@ class _TodayPageState extends ConsumerState<TodayPage>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '已完成 $done／${scheduled.length}',
+                            s.doneOf(done, scheduled.length),
                             style: theme.textTheme.titleMedium,
                           ),
                           const SizedBox(height: 2),
                           Text(
                             done == scheduled.length
-                                ? '今天全部完成 🎉'
-                                : '還差 ${scheduled.length - done} 個',
+                                ? s.allDoneEmoji
+                                : s.remaining(scheduled.length - done),
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
@@ -314,8 +370,10 @@ class _TodayPageState extends ConsumerState<TodayPage>
     );
   }
 
-  Widget _buildContent(BuildContext context, List<HabitItem> all) {
+  Widget _buildContent(BuildContext context, List<HabitItem> allItems) {
+    final s = S.of(context);
     final theme = Theme.of(context);
+    final all = allItems.where((i) => !_hidden.contains(i.habit.id)).toList();
     final wd = DateTime.now().weekday;
     final scheduled = all.where((i) => i.habit.runsOn(wd)).toList();
     final resting = all.where((i) => !i.habit.runsOn(wd)).toList();
@@ -334,10 +392,10 @@ class _TodayPageState extends ConsumerState<TodayPage>
                       color:
                           theme.colorScheme.primary.withValues(alpha: 0.5)),
                   const SizedBox(height: 16),
-                  Text('還沒有任何習慣', style: theme.textTheme.titleLarge),
+                  Text(s.noHabits, style: theme.textTheme.titleLarge),
                   const SizedBox(height: 8),
                   Text(
-                    '從一個小習慣開始,\n每天打卡,累積連續天數。',
+                    s.noHabitsSub,
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodyMedium,
                   ),
@@ -345,7 +403,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
                   FilledButton.icon(
                     onPressed: _openForm,
                     icon: const Icon(Icons.add),
-                    label: const Text('新增第一個習慣'),
+                    label: Text(s.addFirst),
                   ),
                 ],
               ),
@@ -357,7 +415,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
             child: GlassIconButton(
               blur: null,
               icon: Icons.settings_outlined,
-              semanticLabel: '設定',
+              semanticLabel: s.settings,
               onPressed: _openSettings,
             ),
           ),
@@ -392,13 +450,16 @@ class _TodayPageState extends ConsumerState<TodayPage>
               children: [
                 Padding(
                   padding: const EdgeInsets.only(top: 12, bottom: 8),
-                  child: Text('今天休息', style: theme.textTheme.titleMedium),
+                  child: Text(s.restToday, style: theme.textTheme.titleMedium),
                 ),
                 for (final item in resting)
-                  _HabitCard(
-                    key: ValueKey('rest_${item.habit.id}'),
-                    item: item,
-                    resting: true,
+                  _swipeToDelete(
+                    item,
+                    _HabitCard(
+                      key: ValueKey('rest_${item.habit.id}'),
+                      item: item,
+                      resting: true,
+                    ),
                   ),
               ],
             ),
@@ -411,7 +472,10 @@ class _TodayPageState extends ConsumerState<TodayPage>
       },
       itemBuilder: (context, i) {
         final item = scheduled[i];
-        return _HabitCard(key: ValueKey(item.habit.id), item: item);
+        return _swipeToDelete(
+          item,
+          _HabitCard(key: ValueKey(item.habit.id), item: item),
+        );
       },
     );
   }
@@ -429,8 +493,116 @@ class _HabitCard extends ConsumerStatefulWidget {
 class _HabitCardState extends ConsumerState<_HabitCard> {
   bool _down = false;
 
+  /// 單次習慣:原本的勾選按鈕
+  Widget _buildToggleButton({
+    required HabitItem item,
+    required Color color,
+    required ColorScheme scheme,
+    required bool reduce,
+    required bool resting,
+  }) {
+    final s = S.of(context);
+    final done = item.doneToday;
+    return SizedBox(
+      width: 48,
+      height: 48,
+      child: IconButton(
+        tooltip: done ? s.uncheck : s.check,
+        icon: AnimatedSwitcher(
+          duration:
+              reduce ? Duration.zero : const Duration(milliseconds: 320),
+          transitionBuilder: (child, anim) => ScaleTransition(
+            scale: CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
+            child: child,
+          ),
+          child: Icon(
+            done ? Icons.check_circle : Icons.circle_outlined,
+            key: ValueKey(done),
+            size: 32,
+            color: done
+                ? color
+                : scheme.outline.withValues(alpha: resting ? 0.5 : 1.0),
+          ),
+        ),
+        onPressed: () {
+          HapticFeedback.lightImpact();
+          ref
+              .read(todayProvider.notifier)
+              .toggle(item.habit.id!, item.doneToday);
+        },
+      ),
+    );
+  }
+
+  /// 多次習慣:− 按鈕加上進度環 + 按鈕
+  Widget _buildCounterButtons({
+    required HabitItem item,
+    required Color color,
+    required ColorScheme scheme,
+    required bool resting,
+  }) {
+    final s = S.of(context);
+    final target = item.habit.dailyTarget;
+    final count = item.todayCount;
+    final done = item.doneToday;
+    final ringColor = resting ? color.withValues(alpha: 0.5) : color;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (count > 0)
+          SizedBox(
+            width: 40,
+            height: 48,
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              tooltip: s.decrease,
+              icon: const Icon(Icons.remove_circle_outline, size: 24),
+              onPressed: () {
+                HapticFeedback.lightImpact();
+                ref.read(todayProvider.notifier).decrement(item.habit.id!);
+              },
+            ),
+          ),
+        SizedBox(
+          width: 48,
+          height: 48,
+          child: IconButton(
+            tooltip: done ? s.targetReached : s.tapOnce(count, target),
+            onPressed: done
+                ? null
+                : () {
+                    HapticFeedback.lightImpact();
+                    ref
+                        .read(todayProvider.notifier)
+                        .increment(item.habit.id!);
+                  },
+            icon: Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  width: 34,
+                  height: 34,
+                  child: CircularProgressIndicator(
+                    value: (count / target).clamp(0.0, 1.0),
+                    strokeWidth: 3.5,
+                    backgroundColor: scheme.outline.withValues(alpha: 0.25),
+                    color: ringColor,
+                  ),
+                ),
+                Icon(done ? Icons.check : Icons.add,
+                    size: 18, color: ringColor),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final s = S.of(context);
     final item = widget.item;
     final resting = widget.resting;
     final theme = Theme.of(context);
@@ -439,15 +611,20 @@ class _HabitCardState extends ConsumerState<_HabitCard> {
     final done = item.doneToday;
     final reduce = MediaQuery.disableAnimationsOf(context);
 
+    final target = item.habit.dailyTarget;
+    final multi = target > 1;
+
     final titleColor =
         resting ? scheme.onSurface.withValues(alpha: 0.5) : scheme.onSurface;
     final subColor =
         scheme.onSurfaceVariant.withValues(alpha: resting ? 0.6 : 1.0);
     final status = resting
-        ? '今天休息'
+        ? s.restToday
         : done
-            ? '已完成'
-            : '未完成';
+            ? s.completed
+            : multi
+                ? '${item.todayCount}/$target'
+                : s.notDone;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -511,7 +688,7 @@ class _HabitCardState extends ConsumerState<_HabitCard> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              '🔥 ${item.currentStreak} 天 · $status',
+                              '${s.streak(item.currentStreak)} · $status',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.bodyMedium
@@ -520,41 +697,21 @@ class _HabitCardState extends ConsumerState<_HabitCard> {
                           ],
                         ),
                       ),
-                      SizedBox(
-                        width: 48,
-                        height: 48,
-                        child: IconButton(
-                          tooltip: done ? '取消完成' : '標記完成',
-                          icon: AnimatedSwitcher(
-                            duration: reduce
-                                ? Duration.zero
-                                : const Duration(milliseconds: 320),
-                            transitionBuilder: (child, anim) =>
-                                ScaleTransition(
-                              scale: CurvedAnimation(
-                                  parent: anim, curve: Curves.easeOutBack),
-                              child: child,
-                            ),
-                            child: Icon(
-                              done
-                                  ? Icons.check_circle
-                                  : Icons.circle_outlined,
-                              key: ValueKey(done),
-                              size: 32,
-                              color: done
-                                  ? color
-                                  : scheme.outline
-                                      .withValues(alpha: resting ? 0.5 : 1.0),
-                            ),
-                          ),
-                          onPressed: () {
-                            HapticFeedback.lightImpact();
-                            ref
-                                .read(todayProvider.notifier)
-                                .toggle(item.habit.id!, item.doneToday);
-                          },
+                      if (multi)
+                        _buildCounterButtons(
+                          item: item,
+                          color: color,
+                          scheme: scheme,
+                          resting: resting,
+                        )
+                      else
+                        _buildToggleButton(
+                          item: item,
+                          color: color,
+                          scheme: scheme,
+                          reduce: reduce,
+                          resting: resting,
                         ),
-                      ),
                     ],
                   ),
                 ),

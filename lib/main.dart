@@ -3,9 +3,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'app/app.dart';
-import 'core/notification_service.dart'; // 新增
+import 'core/locale_provider.dart';
+import 'core/notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,14 +18,20 @@ Future<void> main() async {
     databaseFactory = databaseFactoryFfi;
   }
 
-  await initializeDateFormatting('zh_TW');
+  // 不帶參數：載入全部語系，中英文日期格式都能用
+  await initializeDateFormatting();
 
-  // 新增：通知初始化。失敗不應讓 app 打不開
+  final prefs = await SharedPreferences.getInstance();
+
+  // 通知初始化。失敗不應讓 app 打不開
   try {
     await NotificationService.instance.init();
   } catch (e) {
     debugPrint('通知初始化失敗：$e');
   }
 
-  runApp(const ProviderScope(child: HabitApp()));
+  runApp(ProviderScope(
+    overrides: [prefsProvider.overrideWithValue(prefs)],
+    child: const HabitApp(),
+  ));
 }

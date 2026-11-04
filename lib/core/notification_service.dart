@@ -77,22 +77,23 @@ class NotificationService {
   }
 
   /// 以目前的習慣清單重排所有提醒：先全部取消，再逐一排程。
-  Future<void> syncAll(List<Habit> habits) async {
+  Future<void> syncAll(List<Habit> habits, {required bool zh}) async {
     if (!_ready) return;
     await _plugin.cancelAll();
     for (final h in habits) {
       final t = h.remindTime;
       if (h.id == null || t == null) continue;
-      await _schedule(h.id!, h.name, t, h.weekdays);
+      await _schedule(h.id!, h.name, t, h.weekdays, zh);
     }
   }
 
-   Future<void> _schedule(
-      int habitId, String name, String hhmm, int weekdays) async {
+
+  Future<void> _schedule(
+      int habitId, String name, String hhmm, int weekdays, bool zh) async {
     final parts = hhmm.split(':');
     final hour = int.parse(parts[0]);
     final minute = int.parse(parts[1]);
-  
+
     if (weekdays == allWeekdays) {
       await _scheduleOne(
         notifId: habitId * 10,
@@ -100,10 +101,11 @@ class NotificationService {
         name: name,
         when: _nextOccurrence(hour, minute, null),
         repeat: DateTimeComponents.time,
+        zh: zh,
       );
       return;
     }
-  
+
     for (var wd = 1; wd <= 7; wd++) {
       if (!weekdayRuns(weekdays, wd)) continue;
       await _scheduleOne(
@@ -112,9 +114,11 @@ class NotificationService {
         name: name,
         when: _nextOccurrence(hour, minute, wd),
         repeat: DateTimeComponents.dayOfWeekAndTime,
+        zh: zh,
       );
     }
   }
+
   
   /// 下一次觸發時間。weekday 為 null 代表任何一天
   tz.TZDateTime _nextOccurrence(int hour, int minute, int? weekday) {
@@ -134,22 +138,25 @@ class NotificationService {
     required String name,
     required tz.TZDateTime when,
     required DateTimeComponents repeat,
+    required bool zh,
   }) async {
     await _plugin.zonedSchedule(
       id: notifId,
-      title: '該打卡囉',
+      title: zh ? '該打卡囉' : 'Time to check in',
       body: name,
       payload: habitId.toString(),
       scheduledDate: when,
-      notificationDetails: const NotificationDetails(
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
-          'habit_reminder',
-          '習慣提醒',
-          channelDescription: '習慣打卡提醒',
+          // Android 頻道名稱建立後不會更新，所以中英文用不同的 id
+          zh ? 'habit_reminder' : 'habit_reminder_en',
+          zh ? '習慣提醒' : 'Habit reminders',
+          channelDescription:
+              zh ? '習慣打卡提醒' : 'Habit check-in reminders',
           importance: Importance.high,
           priority: Priority.high,
         ),
-        iOS: DarwinNotificationDetails(),
+        iOS: const DarwinNotificationDetails(),
       ),
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       matchDateTimeComponents: repeat,

@@ -10,7 +10,7 @@ class HabitDatabase {
 
     _db = await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
@@ -27,7 +27,8 @@ class HabitDatabase {
             is_archived INTEGER NOT NULL DEFAULT 0,
             sort_order INTEGER NOT NULL DEFAULT 0,
             remind_time TEXT,
-            weekdays INTEGER NOT NULL DEFAULT 127
+            weekdays INTEGER NOT NULL DEFAULT 127,
+            daily_target INTEGER NOT NULL DEFAULT 1
           )
         ''');
         await db.execute('''
@@ -35,6 +36,7 @@ class HabitDatabase {
             habit_id INTEGER NOT NULL,
             date_key TEXT NOT NULL,
             completed_at TEXT NOT NULL,
+            count INTEGER NOT NULL DEFAULT 1,
             PRIMARY KEY (habit_id, date_key),
             FOREIGN KEY (habit_id) REFERENCES habits(id) ON DELETE CASCADE
           )
@@ -43,7 +45,7 @@ class HabitDatabase {
       onUpgrade: (db, oldVersion, newVersion) async {
         await _ensureColumns(db);
       },
-      // 保險:即使版本號已是 4 但欄位缺失,也會在開啟時補上
+      // 保險:即使版本號已是最新但欄位缺失,也會在開啟時補上
       onOpen: (db) async {
         await _ensureColumns(db);
       },
@@ -52,15 +54,29 @@ class HabitDatabase {
   }
 
   static Future<void> _ensureColumns(Database db) async {
-    final columns = await db.rawQuery('PRAGMA table_info(habits)');
-    bool has(String name) => columns.any((c) => c['name'] == name);
+    final habitCols = await db.rawQuery('PRAGMA table_info(habits)');
+    bool hasHabit(String name) => habitCols.any((c) => c['name'] == name);
 
-    if (!has('remind_time')) {
+    if (!hasHabit('remind_time')) {
       await db.execute('ALTER TABLE habits ADD COLUMN remind_time TEXT');
     }
-    if (!has('weekdays')) {
+    if (!hasHabit('weekdays')) {
       await db.execute(
           'ALTER TABLE habits ADD COLUMN weekdays INTEGER NOT NULL DEFAULT 127');
+    }
+    // v5:每日目標次數。舊習慣預設 1,行為不變
+    if (!hasHabit('daily_target')) {
+      await db.execute(
+          'ALTER TABLE habits ADD COLUMN daily_target INTEGER NOT NULL DEFAULT 1');
+    }
+
+    final logCols = await db.rawQuery('PRAGMA table_info(habit_logs)');
+    bool hasLog(String name) => logCols.any((c) => c['name'] == name);
+
+    // v5:當天完成次數。舊紀錄預設 1,搭配目標 1 仍算完成
+    if (!hasLog('count')) {
+      await db.execute(
+          'ALTER TABLE habit_logs ADD COLUMN count INTEGER NOT NULL DEFAULT 1');
     }
   }
 }

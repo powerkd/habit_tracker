@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:habit_tracker/core/date_utils.dart';
 import '../../../core/glass_kit.dart';
+import '../../../core/strings.dart';
 import '../domain/habit_style.dart';
 import '../domain/streak_calculator.dart';
 import '../domain/weekday_utils.dart';
@@ -26,18 +27,19 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
   DateTime? _selected;
 
   Future<void> _confirmArchive(String name) async {
+    final s = S.of(context);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('封存習慣'),
-        content: Text('「$name」將從今日清單移除，歷史紀錄會保留。'),
+        title: Text(s.archiveTitle),
+        content: Text(s.archiveBody(name)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消')),
+              child: Text(s.cancel)),
           FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('封存')),
+              child: Text(s.archiveBtn)),
         ],
       ),
     );
@@ -47,19 +49,81 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
     }
   }
 
+  /// 多次習慣的計數列:標題 + 次數 + − / ＋
+  Widget _buildCounter({
+    required String label,
+    required int count,
+    required int target,
+    required Color color,
+    required Color onColor,
+    required VoidCallback? onMinus,
+    required VoidCallback? onPlus,
+  }) {
+    final s = S.of(context);
+    final theme = Theme.of(context);
+    final done = count >= target;
+    return GlassContainer(
+      padding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Semantics(
+              label: s.counterSemantic(label, count, target),
+              excludeSemantics: true,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant)),
+                  const SizedBox(height: 2),
+                  Text(
+                    done ? '$count／$target ✅' : '$count／$target',
+                    style: theme.textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: s.decrease,
+            iconSize: 28,
+            onPressed: onMinus,
+            icon: const Icon(Icons.remove_circle_outline),
+          ),
+          const SizedBox(width: 4),
+          IconButton.filled(
+            tooltip: done ? s.reached : s.doOnce,
+            iconSize: 28,
+            style: IconButton.styleFrom(
+              backgroundColor: color,
+              foregroundColor: onColor,
+              disabledBackgroundColor: color.withValues(alpha: 0.35),
+              disabledForegroundColor: onColor.withValues(alpha: 0.7),
+            ),
+            onPressed: onPlus,
+            icon: Icon(done ? Icons.check : Icons.add),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final s = S.of(context);
     final async = ref.watch(habitDetailProvider(widget.habitId));
 
     return async.when(
       skipLoadingOnReload: true,
       skipLoadingOnRefresh: true,
-      loading: () => GlassScaffold(
-          appBar: AppBar(),
-          body: const SizedBox.shrink(),
-    ),
+      loading: () =>
+          GlassScaffold(appBar: AppBar(), body: const SizedBox.shrink()),
       error: (e, _) => GlassScaffold(
-          appBar: AppBar(), body: Center(child: Text('載入失敗：$e'))),
+          appBar: AppBar(), body: Center(child: Text(s.loadFailed(e)))),
       data: (d) {
         final theme = Theme.of(context);
         final scheme = theme.colorScheme;
@@ -69,7 +133,11 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
         final now = DateTime.now();
         final today = DateTime(now.year, now.month, now.day);
         final todayKey = toDateKey(today);
+        final target = habit.dailyTarget;
+        final multi = habit.isMulti;
+
         final doneToday = d.completedKeys.contains(todayKey);
+        final todayCount = d.counts[todayKey] ?? 0;
         final current = StreakCalculator.current(
           d.completedKeys,
           now,
@@ -83,19 +151,34 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
         final selected = _selected ?? today;
         final selectedKey = toDateKey(selected);
         final selectedDone = d.completedKeys.contains(selectedKey);
+        final selectedCount = d.counts[selectedKey] ?? 0;
         final selectedIsToday = selectedKey == todayKey;
         final selectedScheduled =
             weekdayRuns(habit.weekdays, selected.weekday);
         final todayScheduled = weekdayRuns(habit.weekdays, today.weekday);
 
-        final schedule = weekdaysLabel(habit.weekdays);
+        final schedule = s.scheduleLabel(habit.weekdays);
+
+        /// 日曆格:達標、部分完成、排程
+        Widget cell(DateTime day,
+                {bool isToday = false, bool isSelected = false}) =>
+            _DayCell(
+              day: day,
+              color: color,
+              done: d.completedKeys.contains(toDateKey(day)),
+              partial: !d.completedKeys.contains(toDateKey(day)) &&
+                  (d.counts[toDateKey(day)] ?? 0) > 0,
+              scheduled: weekdayRuns(habit.weekdays, day.weekday),
+              isToday: isToday,
+              isSelected: isSelected,
+            );
 
         return GlassScaffold(
           appBar: AppBar(
             title: Text(habit.name, overflow: TextOverflow.ellipsis),
             actions: [
               IconButton(
-                tooltip: '編輯',
+                tooltip: s.edit,
                 icon: const Icon(Icons.edit_outlined),
                 onPressed: () => Navigator.push(
                   context,
@@ -104,7 +187,7 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
                 ),
               ),
               IconButton(
-                tooltip: '封存',
+                tooltip: s.archiveBtn,
                 icon: const Icon(Icons.archive_outlined),
                 onPressed: () => _confirmArchive(habit.name),
               ),
@@ -135,14 +218,22 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
                             const SizedBox(height: 4),
                           ],
                           Text(
-                            '🗓 $schedule',
+                            '\u{1F5D3} $schedule',
                             style: theme.textTheme.bodyMedium?.copyWith(
                                 color: scheme.onSurfaceVariant),
                           ),
+                          if (multi) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              s.targetPerDay(target),
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: scheme.onSurfaceVariant),
+                            ),
+                          ],
                           if (habit.remindTime != null) ...[
                             const SizedBox(height: 2),
                             Text(
-                              '⏰ ${habit.remindTime} 提醒',
+                              s.remindAt(habit.remindTime!),
                               style: theme.textTheme.bodyMedium?.copyWith(
                                   color: scheme.onSurfaceVariant),
                             ),
@@ -158,64 +249,96 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
               // 統計
               Row(
                 children: [
-                  _StatBox(label: '目前連續', value: '🔥 $current 天'),
-                  const SizedBox(width: 8),
-                  _StatBox(label: '最長連續', value: '🏆 $longest 天'),
+                  _StatBox(
+                      label: s.currentStreakLabel,
+                      value: '\u{1F525} ${s.daysValue(current)}'),
                   const SizedBox(width: 8),
                   _StatBox(
-                      label: '總完成', value: '${d.completedKeys.length} 次'),
+                      label: s.longestStreakLabel,
+                      value: '\u{1F3C6} ${s.daysValue(longest)}'),
+                  const SizedBox(width: 8),
+                  _StatBox(
+                      label: s.totalDoneLabel,
+                      value: s.timesValue(d.completedKeys.length)),
                 ],
               ),
               const SizedBox(height: 16),
 
-              // 今日打卡按鈕
-              SizedBox(
-                height: 52,
-                child: doneToday
-                    ? OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(26)),
-                        ),
-                        icon: const Icon(Icons.undo),
-                        label: const Text('取消今日完成'),
-                        onPressed: () {
+              // 今日打卡
+              if (multi)
+                _buildCounter(
+                  label: todayScheduled ? s.today : s.todayRestDay,
+                  count: todayCount,
+                  target: target,
+                  color: color,
+                  onColor: onColor,
+                  onMinus: todayCount > 0
+                      ? () {
                           HapticFeedback.lightImpact();
                           ref
                               .read(todayProvider.notifier)
-                              .toggle(habit.id!, doneToday);
-                        },
-                      )
-                    : FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: color,
-                          foregroundColor: onColor,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(26)),
-                        ),
-                        icon: const Icon(Icons.check),
-                        label: Text(todayScheduled ? '完成今日' : '今天休息，仍要打卡'),
-                        onPressed: () {
+                              .decrement(habit.id!);
+                        }
+                      : null,
+                  onPlus: doneToday
+                      ? null
+                      : () {
                           HapticFeedback.lightImpact();
                           ref
                               .read(todayProvider.notifier)
-                              .toggle(habit.id!, doneToday);
+                              .increment(habit.id!);
                         },
-                      ),
-              ),
+                )
+              else
+                SizedBox(
+                  height: 52,
+                  child: doneToday
+                      ? OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(26)),
+                          ),
+                          icon: const Icon(Icons.undo),
+                          label: Text(s.cancelToday),
+                          onPressed: () {
+                            HapticFeedback.lightImpact();
+                            ref
+                                .read(todayProvider.notifier)
+                                .toggle(habit.id!, doneToday);
+                          },
+                        )
+                      : FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: color,
+                            foregroundColor: onColor,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(26)),
+                          ),
+                          icon: const Icon(Icons.check),
+                          label: Text(todayScheduled
+                              ? s.completeToday
+                              : s.restDayStillCheck),
+                          onPressed: () {
+                            HapticFeedback.lightImpact();
+                            ref
+                                .read(todayProvider.notifier)
+                                .toggle(habit.id!, doneToday);
+                          },
+                        ),
+                ),
               const SizedBox(height: 16),
 
               // 日曆
               GlassContainer(
                 padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
                 child: TableCalendar(
-                  locale: 'zh_TW',
+                  locale: Localizations.localeOf(context).toString(),
                   firstDay: start,
                   lastDay: today, // 未來日期不可選
                   focusedDay: _focused.isAfter(today) ? today : _focused,
                   startingDayOfWeek: StartingDayOfWeek.monday,
-                  availableCalendarFormats: const {
-                    CalendarFormat.month: '月'
+                  availableCalendarFormats: {
+                    CalendarFormat.month: s.monthFormat,
                   },
                   headerStyle: HeaderStyle(
                     formatButtonVisible: false,
@@ -229,24 +352,11 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
                   }),
                   onPageChanged: (foc) => _focused = foc,
                   calendarBuilders: CalendarBuilders(
-                    defaultBuilder: (ctx, day, _) => _DayCell(
-                      day: day,
-                      color: color,
-                      done: d.completedKeys.contains(toDateKey(day)),
-                      scheduled: weekdayRuns(habit.weekdays, day.weekday),
-                    ),
-                    todayBuilder: (ctx, day, _) => _DayCell(
-                      day: day,
-                      color: color,
-                      done: d.completedKeys.contains(toDateKey(day)),
-                      scheduled: weekdayRuns(habit.weekdays, day.weekday),
-                      isToday: true,
-                    ),
-                    selectedBuilder: (ctx, day, _) => _DayCell(
-                      day: day,
-                      color: color,
-                      done: d.completedKeys.contains(toDateKey(day)),
-                      scheduled: weekdayRuns(habit.weekdays, day.weekday),
+                    defaultBuilder: (ctx, day, _) => cell(day),
+                    todayBuilder: (ctx, day, _) =>
+                        cell(day, isToday: true),
+                    selectedBuilder: (ctx, day, _) => cell(
+                      day,
                       isToday: isSameDay(day, today),
                       isSelected: true,
                     ),
@@ -258,31 +368,63 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
               // 所選日期狀態（文字，不只靠顏色）
               Center(
                 child: Text(
-                  '$selectedKey：${selectedDone ? "✅ 已完成" : "尚未完成"}'
-                  '${selectedScheduled ? "" : "（非排程日）"}',
+                  s.dayStatus(
+                    key: selectedKey,
+                    done: selectedDone,
+                    multi: multi,
+                    count: selectedCount,
+                    target: target,
+                    scheduled: selectedScheduled,
+                  ),
                   style: theme.textTheme.bodyMedium,
                 ),
               ),
               const SizedBox(height: 8),
 
-              // 補打／取消所選日期（今天已有上方按鈕，這裡只處理過去日期）
+              // 補打／取消所選日期（今天已有上方控制，這裡只處理過去日期）
               if (!selectedIsToday)
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(48),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24)),
+                if (multi)
+                  _buildCounter(
+                    label: selectedKey,
+                    count: selectedCount,
+                    target: target,
+                    color: color,
+                    onColor: onColor,
+                    onMinus: selectedCount > 0
+                        ? () {
+                            HapticFeedback.lightImpact();
+                            ref
+                                .read(todayProvider.notifier)
+                                .decrement(habit.id!, selectedKey);
+                          }
+                        : null,
+                    onPlus: selectedDone
+                        ? null
+                        : () {
+                            HapticFeedback.lightImpact();
+                            ref
+                                .read(todayProvider.notifier)
+                                .increment(habit.id!, selectedKey);
+                          },
+                  )
+                else
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(24)),
+                    ),
+                    icon: Icon(
+                        selectedDone ? Icons.undo : Icons.edit_calendar),
+                    label:
+                        Text(selectedDone ? s.cancelThatDay : s.makeUp),
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      ref
+                          .read(todayProvider.notifier)
+                          .setDone(habit.id!, selectedKey, !selectedDone);
+                    },
                   ),
-                  icon: Icon(
-                      selectedDone ? Icons.undo : Icons.edit_calendar),
-                  label: Text(selectedDone ? '取消這天的完成' : '補打這天'),
-                  onPressed: () {
-                    HapticFeedback.lightImpact();
-                    ref
-                        .read(todayProvider.notifier)
-                        .setDone(habit.id!, selectedKey, !selectedDone);
-                  },
-                ),
             ],
           ),
         );
@@ -324,10 +466,13 @@ class _StatBox extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                    color: scheme.onSurfaceVariant, fontSize: 12),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  style: TextStyle(
+                      color: scheme.onSurfaceVariant, fontSize: 12),
+                ),
               ),
             ],
           ),
@@ -340,7 +485,8 @@ class _StatBox extends StatelessWidget {
 class _DayCell extends StatelessWidget {
   final DateTime day;
   final Color color;
-  final bool done;
+  final bool done; // 達標
+  final bool partial; // 有紀錄但未達標
   final bool scheduled;
   final bool isToday;
   final bool isSelected;
@@ -349,6 +495,7 @@ class _DayCell extends StatelessWidget {
     required this.day,
     required this.color,
     required this.done,
+    this.partial = false,
     this.scheduled = true,
     this.isToday = false,
     this.isSelected = false,
@@ -357,14 +504,18 @@ class _DayCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final onSurface = Theme.of(context).colorScheme.onSurface;
-    // 非排程日淡化;但如果那天有打卡,仍維持上色
-    final dim = !scheduled && !done;
+    // 非排程日淡化;但如果那天有紀錄,仍維持正常顏色
+    final dim = !scheduled && !done && !partial;
     return Container(
       margin: const EdgeInsets.all(5),
       alignment: Alignment.center,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: done ? color : null,
+        color: done
+            ? color
+            : partial
+                ? color.withValues(alpha: 0.28)
+                : null,
         border: isSelected
             ? Border.all(color: onSurface, width: 2)
             : isToday

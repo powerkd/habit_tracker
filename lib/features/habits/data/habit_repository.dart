@@ -9,7 +9,6 @@ class DeletedHabitSnapshot {
   const DeletedHabitSnapshot(this.habit, this.logs);
 }
 
-
 class HabitRepository {
   /// 刪除習慣與打卡紀錄,並回傳快照供復原
   Future<DeletedHabitSnapshot?> deleteHabitWithSnapshot(int id) async {
@@ -45,6 +44,7 @@ class HabitRepository {
       await batch.commit(noResult: true);
     });
   }
+
   Future<List<Habit>> getActiveHabits() async {
     final db = await HabitDatabase.instance;
     final rows = await db.query(
@@ -89,8 +89,9 @@ class HabitRepository {
         'description': habit.description,
         'icon_key': habit.iconKey,
         'color_value': habit.colorValue,
-        'remind_time': habit.remindTime, // 新增;null 代表清除提醒
+        'remind_time': habit.remindTime, // null 代表清除提醒
         'weekdays': habit.weekdays,
+        'daily_target': habit.dailyTarget,
       },
       where: 'id = ?',
       whereArgs: [habit.id],
@@ -136,34 +137,128 @@ class HabitRepository {
   Future<void> deleteHabit(int id) async {
     final db = await HabitDatabase.instance;
     await db.transaction((txn) async {
-      await txn.delete('habit_logs',
-          where: 'habit_id = ?', whereArgs: [id]);
+      await txn.delete('habit_logs', where: 'habit_id = ?', whereArgs: [id]);
       await txn.delete('habits', where: 'id = ?', whereArgs: [id]);
     });
   }
 
+  /// 達標的日期(次數 >= 每日目標)。連續天數只用這個計算。
   Future<Set<String>> getCompletedKeys(int habitId) async {
     final db = await HabitDatabase.instance;
-    final rows = await db.query('habit_logs',
-        columns: ['date_key'],
-        where: 'habit_id = ?',
-        whereArgs: [habitId]);
+    final rows = await db.rawQuery('''
+      SELECT l.date_key FROM habit_logs l
+      JOIN habits h ON h.id = l.habit_id
+      WHERE l.habit_id = ? AND l.count >= h.daily_target
+    ''', [habitId]);
     return rows.map((r) => r['date_key'] as String).toSet();
   }
 
-  Future<void> complete(int habitId, String dateKey) async {
+  /// 每個有紀錄的日期的次數(含未達標),供今日頁與日曆顯示進度
+  Future<Map<String, int>> getLogCounts(int habitId) async {
     final db = await HabitDatabase.instance;
-    await db.insert(
+    final rows = await db.query(
       'habit_logs',
-      {
-        'habit_id': habitId,
-        'date_key': dateKey,
-        'completed_at': DateTime.now().toUtc().toIso8601String(),
-      },
-      conflictAlgorithm: ConflictAlgorithm.ignore,
+      columns: ['date_key', 'count'],
+      where: 'habit_id = ?',
+      whereArgs: [habitId],
     );
+    return {
+      for (final r in rows) r['date_key'] as String: (r['count'] as int?) ?? 1,
+    };
   }
 
+  /// 次數 +1,達標後不再增加。回傳增加後的次數。
+  Future<int> increment(int habitId, String dateKey) async {
+    final db = await HabitDatabase.instance;
+    return db.transaction((txn) async {
+      final h = await txn.query('habits',
+          columns: ['daily_target'],
+          where: 'id = ?',
+          whereArgs: [habitId],
+          limit: 1);
+      if (h.isEmpty) return 0;
+      final target = (h.first['daily_target'] as int?) ?? 1;
+
+      final rows = await txn.query('habit_logs',
+          columns: ['count'],
+          where: 'habit_id = ? AND date_key = ?',
+          whereArgs: [habitId, dateKey],
+          limit: 1);
+      final current = rows.isEmpty ? 0 : ((rows.first['count'] as int?) ?? 1);
+      if (current >= target) return current;
+
+      if (rows.isEmpty) {
+        await txn.insert('habit_logs', {
+          'habit_id': habitId,
+          'date_key': dateKey,
+          'count': 1,
+          'completed_at': DateTime.now().toUtc().toIso8601String(),
+        });
+      } else {
+        await txn.update('habit_logs', {'count': current + 1},
+            where: 'habit_id = ? AND date_key = ?',
+            whereArgs: [habitId, dateKey]);
+      }
+      return current + 1;
+    });
+  }
+
+  /// 次數 -1,降到 0 就刪除該筆紀錄。回傳減少後的次數。
+  Future<int> decrement(int habitId, String dateKey) async {
+    final db = await HabitDatabase.instance;
+    return db.transaction((txn) async {
+      final rows = await txn.query('habit_logs',
+          columns: ['count'],
+          where: 'habit_id = ? AND date_key = ?',
+          whereArgs: [habitId, dateKey],
+          limit: 1);
+      if (rows.isEmpty) return 0;
+      final current = (rows.first['count'] as int?) ?? 1;
+      if (current <= 1) {
+        await txn.delete('habit_logs',
+            where: 'habit_id = ? AND date_key = ?',
+            whereArgs: [habitId, dateKey]);
+        return 0;
+      }
+      await txn.update('habit_logs', {'count': current - 1},
+          where: 'habit_id = ? AND date_key = ?',
+          whereArgs: [habitId, dateKey]);
+      return current - 1;
+    });
+  }
+
+  /// 直接標記為達標(補打卡用),次數設為目前的每日目標
+  Future<void> complete(int habitId, String dateKey) async {
+    final db = await HabitDatabase.instance;
+    await db.transaction((txn) async {
+      final h = await txn.query('habits',
+          columns: ['daily_target'],
+          where: 'id = ?',
+          whereArgs: [habitId],
+          limit: 1);
+      if (h.isEmpty) return;
+      final target = (h.first['daily_target'] as int?) ?? 1;
+
+      await txn.insert(
+        'habit_logs',
+        {
+          'habit_id': habitId,
+          'date_key': dateKey,
+          'count': target,
+          'completed_at': DateTime.now().toUtc().toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+      await txn.update(
+        'habit_logs',
+        {'count': target},
+        where: 'habit_id = ? AND date_key = ? AND count < ?',
+        whereArgs: [habitId, dateKey, target],
+      );
+    });
+  }
+
+  /// 清除該日全部次數
   Future<void> uncomplete(int habitId, String dateKey) async {
     final db = await HabitDatabase.instance;
     await db.delete('habit_logs',

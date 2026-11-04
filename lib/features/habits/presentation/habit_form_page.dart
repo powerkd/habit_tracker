@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/glass_kit.dart';
+import '../../../core/strings.dart';
 import '../domain/habit.dart';
 import '../domain/habit_style.dart';
 import '../domain/weekday_utils.dart';
@@ -17,6 +18,8 @@ class HabitFormPage extends ConsumerStatefulWidget {
 }
 
 class _HabitFormPageState extends ConsumerState<HabitFormPage> {
+  static const _maxDailyTarget = 20;
+
   final _formKey = GlobalKey<FormState>();
   final _nameFocus = FocusNode();
   late final TextEditingController _name;
@@ -24,6 +27,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
   late String _iconKey;
   late int _colorValue;
   late int _weekdays;
+  late int _dailyTarget;
   String? _remindTime; // "HH:mm"；null 代表不提醒
   bool _saving = false;
   bool _focusScheduled = false;
@@ -31,7 +35,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
   bool get _isEdit => widget.habit != null;
 
   @override
-    void didChangeDependencies() {
+  void didChangeDependencies() {
     super.didChangeDependencies();
     if (_isEdit || _focusScheduled) return;
     _focusScheduled = true;
@@ -47,8 +51,10 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
         if (mounted) _nameFocus.requestFocus();
       }
     }
+
     anim.addStatusListener(listener);
   }
+
   @override
   void initState() {
     super.initState();
@@ -59,6 +65,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
     _colorValue = h?.colorValue ?? habitColors.first;
     _remindTime = h?.remindTime;
     _weekdays = h?.weekdays ?? allWeekdays;
+    _dailyTarget = h?.dailyTarget ?? 1;
   }
 
   @override
@@ -93,9 +100,10 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
   Future<void> _save() async {
     if (_saving) return; // 防止重複點擊
     if (!_formKey.currentState!.validate()) return;
+    final s = S.of(context);
     if (_weekdays == 0) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('至少選擇一天')));
+          .showSnackBar(SnackBar(content: Text(s.pickAtLeastOne)));
       return;
     }
 
@@ -115,6 +123,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
           sortOrder: widget.habit!.sortOrder,
           remindTime: _remindTime,
           weekdays: _weekdays,
+          dailyTarget: _dailyTarget,
         ));
       } else {
         await notifier.add(
@@ -124,6 +133,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
           colorValue: _colorValue,
           remindTime: _remindTime,
           weekdays: _weekdays,
+          dailyTarget: _dailyTarget,
         );
       }
       if (mounted) Navigator.pop(context);
@@ -131,7 +141,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
       if (!mounted) return;
       setState(() => _saving = false);
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('儲存失敗：$e')));
+          .showSnackBar(SnackBar(content: Text(s.saveFailed(e))));
     }
   }
 
@@ -175,15 +185,94 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
     );
   }
 
+  Widget _buildDailyTargetSection(ThemeData theme) {
+    final s = S.of(context);
+    final editingHigher =
+        _isEdit && _dailyTarget > (widget.habit?.dailyTarget ?? 1);
+    return _section(
+      s.dailyTimes,
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(s.timesPerDay, style: theme.textTheme.titleMedium),
+                    const SizedBox(height: 2),
+                    Text(
+                      _dailyTarget == 1
+                          ? s.tapOnceDone
+                          : s.doneAfter(_dailyTarget),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: s.decreaseTimes,
+                icon: const Icon(Icons.remove_circle_outline),
+                onPressed: _dailyTarget > 1
+                    ? () {
+                        HapticFeedback.selectionClick();
+                        setState(() => _dailyTarget--);
+                      }
+                    : null,
+              ),
+              SizedBox(
+                width: 32,
+                child: Semantics(
+                  label: s.dailyTimesSemantic(_dailyTarget),
+                  excludeSemantics: true,
+                  child: Text(
+                    '$_dailyTarget',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.titleMedium,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: s.increaseTimes,
+                icon: const Icon(Icons.add_circle_outline),
+                onPressed: _dailyTarget < _maxDailyTarget
+                    ? () {
+                        HapticFeedback.selectionClick();
+                        setState(() => _dailyTarget++);
+                      }
+                    : null,
+              ),
+            ],
+          ),
+          if (editingHigher)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                s.raiseWarn,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.error,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final s = S.of(context);
     final theme = Theme.of(context);
     final color = Color(_colorValue);
     final onColor =
         color.computeLuminance() > 0.6 ? Colors.black87 : Colors.white;
 
     return GlassScaffold(
-      appBar: AppBar(title: Text(_isEdit ? '編輯習慣' : '新增習慣')),
+      appBar: AppBar(title: Text(_isEdit ? s.editHabit : s.newHabit)),
       body: Form(
         key: _formKey,
         child: ListView(
@@ -191,16 +280,16 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
           children: [
             _section(
-              '基本資料',
+              s.basicInfo,
               Column(
                 children: [
                   TextFormField(
                     controller: _name,
                     maxLength: 30,
                     focusNode: _nameFocus,
-                    decoration: _dec('習慣名稱', hint: '例如：閱讀 15 分鐘'),
+                    decoration: _dec(s.habitName, hint: s.habitNameHint),
                     validator: (v) => (v == null || v.trim().isEmpty)
-                        ? '請輸入習慣名稱'
+                        ? s.nameRequired
                         : null,
                   ),
                   const SizedBox(height: 12),
@@ -208,17 +297,17 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                     controller: _desc,
                     maxLength: 100,
                     maxLines: 2,
-                    decoration: _dec('說明（選填）'),
+                    decoration: _dec(s.descOptional),
                   ),
                 ],
               ),
             ),
             _section(
-              '外觀',
+              s.appearance,
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('圖示', style: theme.textTheme.titleMedium),
+                  Text(s.iconLabel, style: theme.textTheme.titleMedium),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 10,
@@ -239,7 +328,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                     ],
                   ),
                   const SizedBox(height: 20),
-                  Text('顏色', style: theme.textTheme.titleMedium),
+                  Text(s.colorLabel, style: theme.textTheme.titleMedium),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
@@ -249,7 +338,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                         Semantics(
                           button: true,
                           selected: _colorValue == c,
-                          label: '顏色',
+                          label: s.colorLabel,
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: () {
@@ -289,19 +378,20 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                 ],
               ),
             ),
+            _buildDailyTargetSection(theme),
             _section(
-              '重複與提醒',
+              s.repeatAndRemind,
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('重複', style: theme.textTheme.titleMedium),
+                  Text(s.repeat, style: theme.textTheme.titleMedium),
                   const SizedBox(height: 12),
                   Row(
                     children: [
                       for (var i = 0; i < 7; i++)
                         Expanded(
                           child: _DayButton(
-                            label: weekdayNames[i],
+                            label: s.weekdayShort(i),
                             selected: (_weekdays >> i) & 1 == 1,
                             color: color,
                             onColor: onColor,
@@ -322,19 +412,19 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                     spacing: 8,
                     children: [
                       ChoiceChip(
-                        label: const Text('每天'),
+                        label: Text(s.everyDay),
                         selected: _weekdays == allWeekdays,
                         onSelected: (_) =>
                             setState(() => _weekdays = allWeekdays),
                       ),
                       ChoiceChip(
-                        label: const Text('平日'),
+                        label: Text(s.weekdaysChip),
                         selected: _weekdays == workdays,
                         onSelected: (_) =>
                             setState(() => _weekdays = workdays),
                       ),
                       ChoiceChip(
-                        label: const Text('週末'),
+                        label: Text(s.weekendChip),
                         selected: _weekdays == weekend,
                         onSelected: (_) =>
                             setState(() => _weekdays = weekend),
@@ -345,24 +435,24 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(
-                        '至少選擇一天',
+                        s.pickAtLeastOne,
                         style: theme.textTheme.bodyMedium
                             ?.copyWith(color: theme.colorScheme.error),
                       ),
                     ),
                   const SizedBox(height: 20),
-                  Text('提醒', style: theme.textTheme.titleMedium),
+                  Text(s.reminder, style: theme.textTheme.titleMedium),
                   const SizedBox(height: 4),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.alarm),
-                    title: Text(_remindTime ?? '未設定'),
-                    subtitle: const Text('點一下選擇時間'),
+                    title: Text(_remindTime ?? s.notSet),
+                    subtitle: Text(s.tapPickTime),
                     onTap: _pickTime,
                     trailing: _remindTime == null
                         ? null
                         : IconButton(
-                            tooltip: '清除提醒',
+                            tooltip: s.clearReminder,
                             icon: const Icon(Icons.close),
                             onPressed: () =>
                                 setState(() => _remindTime = null),
@@ -384,7 +474,7 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
                   ),
                 ),
                 child: Text(
-                  _saving ? '儲存中…' : '儲存',
+                  _saving ? s.saving : s.save,
                   style: theme.textTheme.titleMedium
                       ?.copyWith(color: onColor),
                 ),
@@ -437,12 +527,15 @@ class _DayButton extends StatelessWidget {
                   ? color
                   : scheme.onSurface.withValues(alpha: 0.06),
             ),
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: selected ? onColor : scheme.onSurface,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: selected ? onColor : scheme.onSurface,
+                ),
               ),
             ),
           ),

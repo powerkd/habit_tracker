@@ -2,6 +2,9 @@ class Habit {
   /// 每天都做的遮罩(週一到週日全選)
   static const int allDays = 127;
 
+  /// 每日次數上限
+  static const int maxDailyTarget = 20;
+
   final int? id;
   final String name;
   final String? description;
@@ -12,6 +15,7 @@ class Habit {
   final int sortOrder;
   final String? remindTime; // "HH:mm";null 代表不提醒
   final int weekdays; // 位元遮罩:bit0=週一 … bit6=週日
+  final int dailyTarget; // 每天要做幾次,1 代表點一下就完成
 
   const Habit({
     this.id,
@@ -24,6 +28,7 @@ class Habit {
     this.sortOrder = 0,
     this.remindTime,
     this.weekdays = allDays,
+    this.dailyTarget = 1,
   });
 
   /// [weekday] 使用 DateTime.weekday:週一=1 … 週日=7
@@ -31,6 +36,9 @@ class Habit {
 
   /// 是否每天都做
   bool get isEveryDay => (weekdays & allDays) == allDays;
+
+  /// 是否需要一天做多次
+  bool get isMulti => dailyTarget > 1;
 
   Habit copyWith({
     String? name,
@@ -41,6 +49,7 @@ class Habit {
     String? remindTime,
     bool clearRemindTime = false,
     int? weekdays,
+    int? dailyTarget,
   }) =>
       Habit(
         id: id,
@@ -53,6 +62,7 @@ class Habit {
         sortOrder: sortOrder ?? this.sortOrder,
         remindTime: clearRemindTime ? null : (remindTime ?? this.remindTime),
         weekdays: weekdays ?? this.weekdays,
+        dailyTarget: dailyTarget ?? this.dailyTarget,
       );
 
   Map<String, Object?> toMap() => {
@@ -66,6 +76,7 @@ class Habit {
         'sort_order': sortOrder,
         'remind_time': remindTime,
         'weekdays': weekdays,
+        'daily_target': dailyTarget,
       };
 
   factory Habit.fromMap(Map<String, Object?> map) => Habit(
@@ -79,5 +90,6 @@ class Habit {
         sortOrder: map['sort_order'] as int,
         remindTime: map['remind_time'] as String?,
         weekdays: (map['weekdays'] as int?) ?? allDays,
+        dailyTarget: (map['daily_target'] as int?) ?? 1,
       );
 }

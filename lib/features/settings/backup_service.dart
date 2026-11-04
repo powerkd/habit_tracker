@@ -4,10 +4,14 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
 import '../habits/data/habit_database.dart';
+import '../habits/domain/habit.dart';
 
 class BackupService {
   static const _format = 'habit_tracker_backup';
-  static const _version = 1;
+
+  /// 版本 2:新增 habits.daily_target 與 logs.count
+  /// 版本 1 的備份仍可匯入,缺少的欄位視為 1
+  static const _version = 2;
 
   static final _dateRe = RegExp(r'^\d{4}-\d{2}-\d{2}$');
   static final _timeRe = RegExp(r'^([01]\d|2[0-3]):[0-5]\d$');
@@ -117,6 +121,10 @@ class BackupService {
     final wd = raw['weekdays'];
     final weekdays = (wd is int && wd >= 1 && wd <= 127) ? wd : 127;
 
+    // 舊備份沒有此欄位 → 1;異常值限制在 1~20
+    final dt = raw['daily_target'];
+    final dailyTarget = dt is int ? dt.clamp(1, Habit.maxDailyTarget) : 1;
+
     return {
       'id': id,
       'name': name,
@@ -125,6 +133,7 @@ class BackupService {
       'color_value': color,
       'start_date': start,
       'weekdays': weekdays,
+      'daily_target': dailyTarget,
       'created_at':
           created is String ? created : DateTime.now().toUtc().toIso8601String(),
       'is_archived': archived == 1 ? 1 : 0,
@@ -147,11 +156,17 @@ class BackupService {
       throw FormatException(err('date_key'));
     }
     final at = raw['completed_at'];
+
+    // 舊備份沒有此欄位 → 1;至少為 1,上限與每日目標上限一致
+    final c = raw['count'];
+    final count = c is int ? c.clamp(1, Habit.maxDailyTarget) : 1;
+
     return {
       'habit_id': hid,
       'date_key': key,
       'completed_at':
           at is String ? at : DateTime.now().toUtc().toIso8601String(),
+      'count': count,
     };
   }
 }

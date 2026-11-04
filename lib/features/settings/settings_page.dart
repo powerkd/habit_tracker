@@ -1,11 +1,16 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:habit_tracker/core/locale_provider.dart';
+import 'package:home_widget/home_widget.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/glass_kit.dart';
+import '../../core/strings.dart';
+import '../../core/widget_service.dart';
 import '../habits/presentation/habit_providers.dart';
 import 'archived_page.dart';
 import 'backup_service.dart';
@@ -16,38 +21,37 @@ class SettingsPage extends ConsumerWidget {
 
   Future<void> _export(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
+    final s = S.of(context);
     try {
       final file = await BackupService().export();
       await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(file.path)],
-          subject: 'Habit Tracker 備份',
-        ),
+        ShareParams(files: [XFile(file.path)], subject: s.backupSubject),
       );
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('匯出失敗:$e')));
+      messenger.showSnackBar(SnackBar(content: Text(s.exportFailed(e))));
     }
   }
 
   Future<void> _import(BuildContext context, WidgetRef ref) async {
     final messenger = ScaffoldMessenger.of(context);
+    final s = S.of(context);
 
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('匯入備份'),
-        content: const Text('這會取代目前所有習慣與打卡紀錄,確定要繼續嗎?'),
+        title: Text(s.import),
+        content: Text(s.importWarn),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消')),
+              child: Text(s.cancel)),
           FilledButton(
               style: FilledButton.styleFrom(
                 backgroundColor: Theme.of(ctx).colorScheme.error,
                 foregroundColor: Theme.of(ctx).colorScheme.onError,
               ),
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('選擇檔案')),
+              child: Text(s.pickFile)),
         ],
       ),
     );
@@ -55,19 +59,45 @@ class SettingsPage extends ConsumerWidget {
 
     try {
       final file = await FilePicker.pickFile(type: FileType.any);
-      if (file == null) return; // 使用者取消
-
+      if (file == null) return;
       final bytes = await file.readAsBytes();
-
       final r = await BackupService().importJson(utf8.decode(bytes));
-      await ref.read(todayProvider.notifier).refresh(); // 重新載入並重排提醒
-      messenger.showSnackBar(SnackBar(
-          content: Text('匯入完成:${r.habits} 個習慣、${r.logs} 筆打卡紀錄')));
+      await ref.read(todayProvider.notifier).refresh();
+      messenger.showSnackBar(
+          SnackBar(content: Text(s.importDone(r.habits, r.logs))));
     } on FormatException catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('匯入失敗:${e.message}')));
+      messenger.showSnackBar(SnackBar(content: Text(s.importFailed(e.message))));
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('匯入失敗:$e')));
+      messenger.showSnackBar(SnackBar(content: Text(s.importFailed(e))));
     }
+  }
+
+  Future<void> _pinWidget(BuildContext context) async {
+    final s = S.of(context);
+    try {
+      final supported = await HomeWidget.isRequestPinWidgetSupported() ?? false;
+      if (supported) {
+        await HomeWidget.requestPinWidget(
+          name: WidgetService.providerName,
+          androidName: WidgetService.providerName,
+          qualifiedAndroidName: WidgetService.qualifiedName,
+        );
+        return;
+      }
+    } catch (_) {
+      // 落到下面的手動教學
+    }
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(s.pinTitle),
+        content: Text(s.pinBody),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(s.ok)),
+        ],
+      ),
+    );
   }
 
   Widget _section(BuildContext context, String title, Widget child) {
@@ -98,48 +128,79 @@ class SettingsPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final s = S.of(context);
     final mode = ref.watch(themeModeProvider).value ?? ThemeMode.system;
+    final locale = ref.watch(localeProvider);
 
     return GlassScaffold(
-      appBar: AppBar(title: const Text('設定')),
+      appBar: AppBar(title: Text(s.settings)),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
         children: [
           _section(
             context,
-            '外觀',
+            s.appearance,
             Padding(
               padding: const EdgeInsets.all(8),
               child: SegmentedButton<ThemeMode>(
                 showSelectedIcon: false,
-                segments: const [
+                segments: [
                   ButtonSegment(
                       value: ThemeMode.system,
-                      icon: Icon(Icons.brightness_auto),
-                      label: Text('系統')),
+                      icon: const Icon(Icons.brightness_auto),
+                      label: Text(s.system)),
                   ButtonSegment(
                       value: ThemeMode.light,
-                      icon: Icon(Icons.light_mode),
-                      label: Text('淺色')),
+                      icon: const Icon(Icons.light_mode),
+                      label: Text(s.light)),
                   ButtonSegment(
                       value: ThemeMode.dark,
-                      icon: Icon(Icons.dark_mode),
-                      label: Text('深色')),
+                      icon: const Icon(Icons.dark_mode),
+                      label: Text(s.dark)),
                 ],
                 selected: {mode},
-                onSelectionChanged: (s) =>
-                    ref.read(themeModeProvider.notifier).setMode(s.first),
+                onSelectionChanged: (v) =>
+                    ref.read(themeModeProvider.notifier).setMode(v.first),
               ),
             ),
           ),
           _section(
             context,
-            '資料',
+            s.language,
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: 'zh', label: Text('繁體中文')),
+                  ButtonSegment(value: 'en', label: Text('English')),
+                ],
+                selected: {locale.languageCode == 'zh' ? 'zh' : 'en'},
+                onSelectionChanged: (v) => ref
+                    .read(localeProvider.notifier)
+                    .set(v.first == 'zh' ? kZh : kEn),
+              ),
+            ),
+          ),
+          if (Platform.isAndroid)
+            _section(
+              context,
+              s.homeScreen,
+              _SettingsTile(
+                icon: Icons.widgets_outlined,
+                title: s.addWidget,
+                subtitle: s.addWidgetSub,
+                onTap: () => _pinWidget(context),
+              ),
+            ),
+          _section(
+            context,
+            s.data,
             Column(
               children: [
                 _SettingsTile(
                   icon: Icons.archive_outlined,
-                  title: '已封存的習慣',
+                  title: s.archived,
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => Navigator.push(
                     context,
@@ -149,15 +210,15 @@ class SettingsPage extends ConsumerWidget {
                 const _Divider(),
                 _SettingsTile(
                   icon: Icons.upload_file_outlined,
-                  title: '匯出備份',
-                  subtitle: '存成 JSON 檔,可傳到雲端或其他手機',
+                  title: s.export,
+                  subtitle: s.exportSub,
                   onTap: () => _export(context),
                 ),
                 const _Divider(),
                 _SettingsTile(
                   icon: Icons.download_outlined,
-                  title: '匯入備份',
-                  subtitle: '從 JSON 檔還原(會取代目前資料)',
+                  title: s.import,
+                  subtitle: s.importSub,
                   onTap: () => _import(context, ref),
                 ),
               ],
