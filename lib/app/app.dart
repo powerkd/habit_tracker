@@ -1,12 +1,14 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../core/app_navigator.dart';
 import '../core/app_settings.dart';
 import '../core/app_shell.dart';
 import '../core/glass_kit.dart';
 import '../core/locale_provider.dart';
+import '../core/splash_gate.dart';
 import '../features/settings/settings_providers.dart';
 
 /// 所有平台都用 iOS 轉場:左緣滑動返回 + 視差。
@@ -44,7 +46,12 @@ class HabitApp extends ConsumerWidget {
           .copyWith(pageTransitionsTheme: _pageTransitions),
       darkTheme: AppTheme.dark(accent.dark)
           .copyWith(pageTransitionsTheme: _pageTransitions),
-      builder: (context, child) => GlassBackground(child: child!),
+      builder: (context, child) => GlassBackground(
+        child: SplashGate(
+          title: '習慣追蹤',
+          child: child!,
+        ),
+      ),
       home: const AppShell(),
     );
   }

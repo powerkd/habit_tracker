@@ -2,7 +2,7 @@ name: habit_tracker
 description: "極簡習慣追蹤器，支援每週排程與提醒"
 publish_to: 'none'
 
-version: 1.6.0+17
+version: 1.6.1+18
 
 environment:
   sdk: ^3.13.5
