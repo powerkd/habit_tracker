@@ -13,9 +13,12 @@ import 'package:share_plus/share_plus.dart';
 import '../../core/app_settings.dart';
 import '../../core/glass_kit.dart';
 import '../../core/haptics.dart';
+import '../../core/ios_dialogs.dart';
 import '../../core/links.dart';
+import '../../core/routes.dart';
 import '../../core/settings_strings.dart';
 import '../../core/strings.dart';
+import '../../core/toast.dart';
 import '../../core/tokens.dart';
 import '../../core/widget_service.dart';
 import '../habits/presentation/habit_providers.dart';
@@ -29,7 +32,8 @@ class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
 
   Future<void> _export(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
+    // await 之前先取得,之後不必再用 BuildContext
+    final overlay = Overlay.of(context, rootOverlay: true);
     final s = S.of(context);
     try {
       final file = await BackupService().export();
@@ -37,34 +41,28 @@ class SettingsPage extends ConsumerWidget {
         ShareParams(files: [XFile(file.path)], subject: s.backupSubject),
       );
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(s.exportFailed(e))));
+      Toast.showOn(
+        overlay,
+        message: s.exportFailed(e),
+        icon: Icons.error_outline_rounded,
+        iconColor: Tone.danger,
+      );
     }
   }
 
   Future<void> _import(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
+    final overlay = Overlay.of(context, rootOverlay: true);
     final s = S.of(context);
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(s.import),
-        content: Text(s.importWarn),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(s.cancel)),
-          FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: Tone.danger,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(s.pickFile)),
-        ],
-      ),
+    final ok = await showIosConfirm(
+      context,
+      title: s.import,
+      message: s.importWarn,
+      confirmLabel: s.pickFile,
+      cancelLabel: s.cancel,
+      destructive: true,
     );
-    if (ok != true) return;
+    if (!ok) return;
 
     try {
       final file = await FilePicker.pickFile(type: FileType.any);
@@ -72,12 +70,25 @@ class SettingsPage extends ConsumerWidget {
       final bytes = await file.readAsBytes();
       final r = await BackupService().importJson(utf8.decode(bytes));
       await ref.read(todayProvider.notifier).refresh();
-      messenger.showSnackBar(
-          SnackBar(content: Text(s.importDone(r.habits, r.logs))));
+      Toast.showOn(
+        overlay,
+        message: s.importDone(r.habits, r.logs),
+        icon: Icons.check_circle_rounded,
+      );
     } on FormatException catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(s.importFailed(e.message))));
+      Toast.showOn(
+        overlay,
+        message: s.importFailed(e.message),
+        icon: Icons.error_outline_rounded,
+        iconColor: Tone.danger,
+      );
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(s.importFailed(e))));
+      Toast.showOn(
+        overlay,
+        message: s.importFailed(e),
+        icon: Icons.error_outline_rounded,
+        iconColor: Tone.danger,
+      );
     }
   }
 
@@ -97,30 +108,31 @@ class SettingsPage extends ConsumerWidget {
       // 落到下面的手動教學
     }
     if (!context.mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(s.pinTitle),
-        content: Text(s.pinBody),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(s.ok)),
-        ],
-      ),
+    await showIosAlert(
+      context,
+      title: s.pinTitle,
+      message: s.pinBody,
+      okLabel: s.ok,
     );
   }
 
   Future<void> _openIssues(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
+    final overlay = Overlay.of(context, rootOverlay: true);
     final s = S.of(context);
     final ok = await openUrl(kIssuesUrl);
     if (!ok) {
-      messenger.showSnackBar(SnackBar(content: Text(s.openLinkFailed)));
+      Toast.showOn(
+        overlay,
+        message: s.openLinkFailed,
+        icon: Icons.error_outline_rounded,
+        iconColor: Tone.danger,
+      );
     }
   }
 
   /// 複製版本與系統資訊,不含任何習慣資料
   Future<void> _copyDiagnostics(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
+    final overlay = Overlay.of(context, rootOverlay: true);
     final s = S.of(context);
     final locale = Localizations.localeOf(context).toLanguageTag();
     final info = await PackageInfo.fromPlatform();
@@ -130,7 +142,12 @@ class SettingsPage extends ConsumerWidget {
       'Locale: $locale',
     ].join('\n');
     await Clipboard.setData(ClipboardData(text: text));
-    messenger.showSnackBar(SnackBar(content: Text(s.diagCopied)));
+    Haptics.light();
+    Toast.showOn(
+      overlay,
+      message: s.diagCopied,
+      icon: Icons.check_circle_rounded,
+    );
   }
 
   @override
@@ -282,7 +299,7 @@ class SettingsPage extends ConsumerWidget {
               trailing: Icon(Icons.chevron_right, color: c.labelTertiary),
               onTap: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const ArchivedPage()),
+                appRoute(const ArchivedPage()),
               ),
             ),
             GroupedRow(
@@ -315,7 +332,7 @@ class SettingsPage extends ConsumerWidget {
               trailing: Icon(Icons.chevron_right, color: c.labelTertiary),
               onTap: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const HelpPage()),
+                appRoute(const HelpPage()),
               ),
             ),
             GroupedRow(
@@ -338,7 +355,7 @@ class SettingsPage extends ConsumerWidget {
               trailing: Icon(Icons.chevron_right, color: c.labelTertiary),
               onTap: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const AboutPage()),
+                appRoute(const AboutPage()),
               ),
             ),
           ]),
@@ -348,7 +365,7 @@ class SettingsPage extends ConsumerWidget {
   }
 }
 
-/// 一列「標題 + 右側藍字數值」,點擊彈出選單
+/// 一列「標題 + 右側藍字數值」,點擊彈出 iOS 底部選單
 class _PickerRow<T> extends StatelessWidget {
   final String title;
   final T value;
@@ -362,19 +379,23 @@ class _PickerRow<T> extends StatelessWidget {
     required this.onChanged,
   });
 
+  Future<void> _pick(BuildContext context) async {
+    final picked = await showIosPicker<T>(
+      context,
+      title: title,
+      options: options,
+      value: value,
+      cancelLabel: S.of(context).cancel,
+    );
+    if (picked != null && picked != value) onChanged(picked);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<T>(
-      position: PopupMenuPosition.under,
-      onSelected: onChanged,
-      itemBuilder: (_) => [
-        for (final e in options.entries)
-          PopupMenuItem<T>(value: e.key, child: Text(e.value)),
-      ],
-      child: GroupedRow(
-        title: title,
-        trailing: ValueLabel(options[value] ?? ''),
-      ),
+    return GroupedRow(
+      title: title,
+      trailing: ValueLabel(options[value] ?? ''),
+      onTap: () => _pick(context),
     );
   }
 }

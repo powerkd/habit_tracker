@@ -4,10 +4,25 @@ import '../../core/glass_kit.dart';
 import '../../core/links.dart';
 import '../../core/settings_strings.dart';
 import '../../core/strings.dart';
+import '../../core/toast.dart';
 import '../../core/tokens.dart';
 
 class AboutPage extends StatelessWidget {
   const AboutPage({super.key});
+
+  Future<void> _openRepo(BuildContext context) async {
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final s = S.of(context);
+    final ok = await openUrl(kRepoUrl);
+    if (!ok) {
+      Toast.showOn(
+        overlay,
+        message: s.openLinkFailed,
+        icon: Icons.error_outline_rounded,
+        iconColor: Tone.danger,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -71,14 +86,7 @@ class AboutPage extends StatelessWidget {
                   subtitle: 'github.com/powerkd/habit_tracker',
                   trailing:
                       Icon(Icons.open_in_new, size: 20, color: c.labelTertiary),
-                  onTap: () async {
-                    final messenger = ScaffoldMessenger.of(context);
-                    final ok = await openUrl(kRepoUrl);
-                    if (!ok) {
-                      messenger.showSnackBar(
-                          SnackBar(content: Text(s.openLinkFailed)));
-                    }
-                  },
+                  onTap: () => _openRepo(context),
                 ),
               ]),
               Padding(

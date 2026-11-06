@@ -6,6 +6,7 @@ import '../../../core/app_settings.dart';
 import '../../../core/glass_kit.dart';
 import '../../../core/haptics.dart';
 import '../../../core/motion.dart';
+import '../../../core/routes.dart';
 import '../../../core/strings.dart';
 import '../../../core/tokens.dart';
 import '../domain/habit_style.dart';
@@ -257,8 +258,7 @@ class _HabitDetailPageState extends ConsumerState<HabitDetailPage> {
                 icon: const Icon(Icons.edit_outlined),
                 onPressed: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                      builder: (_) => HabitFormPage(habit: habit)),
+                  appRoute(HabitFormPage(habit: habit)),
                 ),
               ),
               IconButton(

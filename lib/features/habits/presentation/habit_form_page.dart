@@ -4,6 +4,7 @@ import '../../../core/glass_kit.dart';
 import '../../../core/haptics.dart';
 import '../../../core/motion.dart';
 import '../../../core/strings.dart';
+import '../../../core/toast.dart';
 import '../../../core/tokens.dart';
 import '../domain/habit.dart';
 import '../domain/habit_style.dart';
@@ -103,9 +104,17 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
     if (_saving) return; // 防止重複點擊
     if (!_formKey.currentState!.validate()) return;
     final s = S.of(context);
+    // await 之前先取得 Overlay;頁面關閉後提示仍可顯示
+    final overlay = Overlay.of(context, rootOverlay: true);
+
     if (_weekdays == 0) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(s.pickAtLeastOne)));
+      Haptics.light();
+      Toast.showOn(
+        overlay,
+        message: s.pickAtLeastOne,
+        icon: Icons.error_outline_rounded,
+        iconColor: Tone.danger,
+      );
       return;
     }
 
@@ -140,10 +149,13 @@ class _HabitFormPageState extends ConsumerState<HabitFormPage> {
       }
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _saving = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(s.saveFailed(e))));
+      if (mounted) setState(() => _saving = false);
+      Toast.showOn(
+        overlay,
+        message: s.saveFailed(e),
+        icon: Icons.error_outline_rounded,
+        iconColor: Tone.danger,
+      );
     }
   }
 

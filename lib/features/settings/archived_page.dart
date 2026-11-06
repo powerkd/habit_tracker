@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:habit_tracker/core/glass_kit.dart';
+import '../../core/haptics.dart';
 import '../../core/strings.dart';
+import '../../core/toast.dart';
 import '../../core/tokens.dart';
 import '../habits/domain/habit.dart';
 import '../habits/domain/habit_style.dart';
@@ -13,7 +15,8 @@ class ArchivedPage extends ConsumerWidget {
   Future<void> _confirmDelete(
       BuildContext context, WidgetRef ref, Habit habit) async {
     final s = S.of(context);
-    final messenger = ScaffoldMessenger.of(context);
+    // await 之前先取得,之後不必再用 BuildContext
+    final overlay = Overlay.of(context, rootOverlay: true);
     final notifier = ref.read(todayProvider.notifier);
 
     final ok = await showDialog<bool>(
@@ -42,27 +45,34 @@ class ArchivedPage extends ConsumerWidget {
       final snap = await notifier.deleteWithSnapshot(habit.id!);
       if (snap == null) return;
 
-      messenger
-        ..clearSnackBars()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(s.deleted(habit.name)),
-            duration: const Duration(seconds: 6),
-            action: SnackBarAction(
-              label: s.undo,
-              onPressed: () async {
-                try {
-                  await notifier.restoreDeleted(snap);
-                } catch (e) {
-                  messenger.showSnackBar(
-                      SnackBar(content: Text(s.restoreFailed(e))));
-                }
-              },
-            ),
-          ),
-        );
+      Haptics.medium();
+      Toast.showOn(
+        overlay,
+        message: s.deleted(habit.name),
+        icon: Icons.delete_outline_rounded,
+        iconColor: Tone.danger,
+        actionLabel: s.undo,
+        duration: const Duration(seconds: 6),
+        onAction: () async {
+          try {
+            await notifier.restoreDeleted(snap);
+          } catch (e) {
+            Toast.showOn(
+              overlay,
+              message: s.restoreFailed(e),
+              icon: Icons.error_outline_rounded,
+              iconColor: Tone.danger,
+            );
+          }
+        },
+      );
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(s.deleteFailed(e))));
+      Toast.showOn(
+        overlay,
+        message: s.deleteFailed(e),
+        icon: Icons.error_outline_rounded,
+        iconColor: Tone.danger,
+      );
     }
   }
 
@@ -112,7 +122,10 @@ class ArchivedPage extends ConsumerWidget {
             tooltip: s.restore,
             color: theme.colorScheme.primary,
             icon: const Icon(Icons.unarchive_outlined),
-            onPressed: () => ref.read(todayProvider.notifier).restore(h.id!),
+            onPressed: () {
+              Haptics.light();
+              ref.read(todayProvider.notifier).restore(h.id!);
+            },
           ),
           IconButton(
             tooltip: s.permDelete,

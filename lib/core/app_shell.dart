@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../features/habits/presentation/habit_form_page.dart';
-import '../features/habits/presentation/today_page.dart';
+import '../features/habits/presentation/today/today_page.dart';
 import '../features/settings/settings_page.dart';
 import 'glass_kit.dart';
 import 'haptics.dart';
