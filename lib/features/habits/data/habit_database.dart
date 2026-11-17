@@ -2,17 +2,27 @@ import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
 class HabitDatabase {
-  static Database? _db;
+  static Future<Database>? _opening;
 
-  static Future<Database> get instance async {
-    if (_db != null) return _db!;
+  /// 快取 Future:多處同時第一次呼叫也只會開啟一次
+  static Future<Database> get instance => _opening ??= _open().catchError((e) {
+        _opening = null; // 開啟失敗時允許重試
+        throw e;
+      });
+
+  static Future<Database> _open() async {
     final path = join(await getDatabasesPath(), 'habit_tracker.db');
 
-    _db = await openDatabase(
+    return openDatabase(
       path,
-      version: 5,
+      version: 6,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
+        // WAL:寫入不會擋住讀取。失敗就用預設模式,不影響功能
+        try {
+          await db.rawQuery('PRAGMA journal_mode = WAL');
+          await db.execute('PRAGMA synchronous = NORMAL');
+        } catch (_) {}
       },
       onCreate: (db, version) async {
         await db.execute('''
@@ -41,16 +51,32 @@ class HabitDatabase {
             FOREIGN KEY (habit_id) REFERENCES habits(id) ON DELETE CASCADE
           )
         ''');
+        await _createIndexes(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         await _ensureColumns(db);
+        // v6:新增索引(只新增,不動既有資料)
+        await _createIndexes(db);
       },
       // 保險:即使版本號已是最新但欄位缺失,也會在開啟時補上
       onOpen: (db) async {
         await _ensureColumns(db);
       },
     );
-    return _db!;
+  }
+
+  /// 全部用 IF NOT EXISTS,重複執行也安全
+  static Future<void> _createIndexes(Database db) async {
+    // 列出未封存習慣並依排序取出
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_habits_archived_order
+      ON habits (is_archived, sort_order)
+    ''');
+    // 依日期查詢全部習慣的紀錄(統計、小工具、跨習慣查詢)
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_logs_date
+      ON habit_logs (date_key)
+    ''');
   }
 
   static Future<void> _ensureColumns(Database db) async {

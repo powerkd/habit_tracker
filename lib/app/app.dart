@@ -6,13 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/app_navigator.dart';
 import '../core/app_settings.dart';
 import '../core/app_shell.dart';
+import '../core/day_change_watcher.dart';
 import '../core/glass_kit.dart';
 import '../core/locale_provider.dart';
 import '../core/splash_gate.dart';
+import '../features/habits/presentation/habit_providers.dart';
 import '../features/settings/settings_providers.dart';
 
 /// 所有平台都用 iOS 轉場:左緣滑動返回 + 視差。
-/// 沒有改用 appRoute() 的 MaterialPageRoute 也會套用。
 const _pageTransitions = PageTransitionsTheme(builders: {
   TargetPlatform.android: CupertinoPageTransitionsBuilder(),
   TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
@@ -24,11 +25,19 @@ const _pageTransitions = PageTransitionsTheme(builders: {
 class HabitApp extends ConsumerWidget {
   const HabitApp({super.key});
 
+  /// 跨午夜或從背景回來發現日期已變時呼叫。
+  /// todayProvider 重建時會自動重排提醒並同步小工具。
+  void _onDayChanged(WidgetRef ref) {
+    ref.invalidate(habitDetailProvider);
+    ref.invalidate(todayProvider);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final locale = ref.watch(localeProvider);
     final mode = ref.watch(themeModeProvider).value ?? ThemeMode.system;
-    final accent = ref.watch(appSettingsProvider.select((s) => s.accentChoice));
+    final accent =
+        ref.watch(appSettingsProvider.select((s) => s.accentChoice));
 
     return MaterialApp(
       locale: locale,
@@ -46,10 +55,13 @@ class HabitApp extends ConsumerWidget {
           .copyWith(pageTransitionsTheme: _pageTransitions),
       darkTheme: AppTheme.dark(accent.dark)
           .copyWith(pageTransitionsTheme: _pageTransitions),
-      builder: (context, child) => GlassBackground(
-        child: SplashGate(
-          title: '習慣追蹤',
-          child: child!,
+      builder: (context, child) => DayChangeWatcher(
+        onDayChanged: () => _onDayChanged(ref),
+        child: GlassBackground(
+          child: SplashGate(
+            title: '習慣追蹤',
+            child: child!,
+          ),
         ),
       ),
       home: const AppShell(),

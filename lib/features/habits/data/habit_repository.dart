@@ -10,24 +10,25 @@ class DeletedHabitSnapshot {
 }
 
 class HabitRepository {
-  /// 刪除習慣與打卡紀錄,並回傳快照供復原
+  /// 刪除習慣與打卡紀錄,並回傳快照供復原。
+  /// 讀取與刪除在同一個交易內,資料不會在中間被改動。
   Future<DeletedHabitSnapshot?> deleteHabitWithSnapshot(int id) async {
     final db = await HabitDatabase.instance;
-    final rows =
-        await db.query('habits', where: 'id = ?', whereArgs: [id], limit: 1);
-    if (rows.isEmpty) return null;
-    final logs =
-        await db.query('habit_logs', where: 'habit_id = ?', whereArgs: [id]);
+    return db.transaction((txn) async {
+      final rows = await txn.query('habits',
+          where: 'id = ?', whereArgs: [id], limit: 1);
+      if (rows.isEmpty) return null;
+      final logs = await txn
+          .query('habit_logs', where: 'habit_id = ?', whereArgs: [id]);
 
-    await db.transaction((txn) async {
       await txn.delete('habit_logs', where: 'habit_id = ?', whereArgs: [id]);
       await txn.delete('habits', where: 'id = ?', whereArgs: [id]);
-    });
 
-    return DeletedHabitSnapshot(
-      Map<String, Object?>.of(rows.first),
-      logs.map((e) => Map<String, Object?>.of(e)).toList(),
-    );
+      return DeletedHabitSnapshot(
+        Map<String, Object?>.of(rows.first),
+        logs.map((e) => Map<String, Object?>.of(e)).toList(),
+      );
+    });
   }
 
   /// 用快照還原(保留原本的 id,提醒的通知 id 也會一致)
@@ -165,6 +166,23 @@ class HabitRepository {
     return {
       for (final r in rows) r['date_key'] as String: (r['count'] as int?) ?? 1,
     };
+  }
+
+  /// 一次取回所有習慣的次數:habitId -> (dateKey -> count)。
+  /// 取代對每個習慣各查一次(N+1)。
+  Future<Map<int, Map<String, int>>> getAllLogCounts() async {
+    final db = await HabitDatabase.instance;
+    final rows = await db.query(
+      'habit_logs',
+      columns: ['habit_id', 'date_key', 'count'],
+    );
+    final result = <int, Map<String, int>>{};
+    for (final r in rows) {
+      final id = r['habit_id'] as int;
+      (result[id] ??= {})[r['date_key'] as String] =
+          (r['count'] as int?) ?? 1;
+    }
+    return result;
   }
 
   /// 次數 +1,達標後不再增加。回傳增加後的次數。

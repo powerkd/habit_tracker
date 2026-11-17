@@ -43,17 +43,25 @@ class HabitDetail {
 class TodayNotifier extends AsyncNotifier<List<HabitItem>> {
   HabitRepository get _repo => ref.read(habitRepositoryProvider);
 
+  /// 下一次 build 是否需要重排提醒。
+  /// 初次載入、切換語言、習慣設定變動時為 true;單純打卡為 false。
+  bool _needsReschedule = true;
+
   @override
   Future<List<HabitItem>> build() async {
     // watch：切換語言時重新載入，小工具文字跟著換
     final locale = ref.watch(localeProvider);
     final zh = locale.languageCode == 'zh';
     final items = await _load();
-    _syncNotifications(items.map((e) => e.habit).toList(), zh);
+
+    if (_needsReschedule) {
+      _syncNotifications(items.map((e) => e.habit).toList(), zh);
+    }
+    _needsReschedule = true; // 預設下次重建(語言切換等)要重排
     _syncWidget(items, zh);
     return items;
   }
-  
+
   void _syncWidget(List<HabitItem> items, bool zh) {
     final now = DateTime.now();
     final list = items
@@ -67,7 +75,6 @@ class TodayNotifier extends AsyncNotifier<List<HabitItem>> {
     WidgetService.instance.sync(list, toDateKey(now), zh: zh);
   }
 
-
   /// 重排提醒:失敗不應影響主要功能
   void _syncNotifications(List<Habit> habits, bool zh) {
     NotificationService.instance.syncAll(habits, zh: zh).catchError((_) {});
@@ -77,26 +84,39 @@ class TodayNotifier extends AsyncNotifier<List<HabitItem>> {
     final now = DateTime.now();
     final todayKey = toDateKey(now);
     final habits = await _repo.getActiveHabits();
+    // 一次取回全部紀錄,避免每個習慣各查一次
+    final allCounts = await _repo.getAllLogCounts();
 
     final items = <HabitItem>[];
     for (final h in habits) {
-      final counts = await _repo.getLogCounts(h.id!);
+      final counts = allCounts[h.id!] ?? const <String, int>{};
       final keys = _completedFrom(counts, h.dailyTarget);
       items.add(HabitItem(
         habit: h,
         doneToday: keys.contains(todayKey),
         todayCount: counts[todayKey] ?? 0,
-        currentStreak: StreakCalculator.current(keys, now, weekdays: h.weekdays),
+        currentStreak:
+            StreakCalculator.current(keys, now, weekdays: h.weekdays),
         longestStreak: StreakCalculator.longest(keys, weekdays: h.weekdays),
       ));
     }
     return items;
   }
 
+  /// 習慣本身變動(新增/編輯/封存/刪除/還原/匯入):重排提醒,封存清單也要更新
   Future<void> _reload() async {
+    _needsReschedule = true;
     ref.invalidateSelf();
     ref.invalidate(habitDetailProvider);
     ref.invalidate(archivedProvider);
+    await future;
+  }
+
+  /// 只有打卡次數變動:不重排提醒,不動封存清單
+  Future<void> _reloadLogs() async {
+    _needsReschedule = false;
+    ref.invalidateSelf();
+    ref.invalidate(habitDetailProvider);
     await future;
   }
 
@@ -152,7 +172,7 @@ class TodayNotifier extends AsyncNotifier<List<HabitItem>> {
     } else {
       await _repo.complete(habitId, todayKey);
     }
-    await _reload();
+    await _reloadLogs();
   }
 
   /// 多次習慣:次數 +1。[dateKey] 省略代表今天,不允許未來日期
@@ -161,7 +181,7 @@ class TodayNotifier extends AsyncNotifier<List<HabitItem>> {
     final key = dateKey ?? today;
     if (key.compareTo(today) > 0) return;
     await _repo.increment(habitId, key);
-    await _reload();
+    await _reloadLogs();
   }
 
   /// 多次習慣:次數 -1。[dateKey] 省略代表今天
@@ -170,7 +190,7 @@ class TodayNotifier extends AsyncNotifier<List<HabitItem>> {
     final key = dateKey ?? today;
     if (key.compareTo(today) > 0) return;
     await _repo.decrement(habitId, key);
-    await _reload();
+    await _reloadLogs();
   }
 
   /// 設定任一日期的完成狀態(補打用),不允許未來日期
@@ -182,7 +202,7 @@ class TodayNotifier extends AsyncNotifier<List<HabitItem>> {
     } else {
       await _repo.uncomplete(habitId, dateKey);
     }
-    await _reload();
+    await _reloadLogs();
   }
 
   /// 拖曳排序:先更新畫面,再寫入資料庫
@@ -226,6 +246,7 @@ class TodayNotifier extends AsyncNotifier<List<HabitItem>> {
     await _reload();
   }
 
+  /// 完整重載(匯入備份後、跨日)。一定會重排提醒。
   Future<void> refresh() => _reload();
 }
 

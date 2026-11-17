@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
@@ -5,9 +7,9 @@ import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 import '../features/habits/domain/habit.dart';
+import '../features/habits/domain/weekday_utils.dart';
 import '../features/habits/presentation/habit_detail_page.dart';
 import 'app_navigator.dart';
-import '../features/habits/domain/weekday_utils.dart';
 
 class NotificationService {
   NotificationService._();
@@ -16,7 +18,12 @@ class NotificationService {
   final _plugin = FlutterLocalNotificationsPlugin();
   bool _ready = false;
 
+  /// 目前只支援 Android 與 iOS。桌面版沒有提醒功能。
+  static bool get supported => Platform.isAndroid || Platform.isIOS;
+
   Future<void> init() async {
+    if (!supported) return;
+
     tzdata.initializeTimeZones();
     try {
       final info = await FlutterTimezone.getLocalTimezone();
@@ -87,7 +94,6 @@ class NotificationService {
     }
   }
 
-
   Future<void> _schedule(
       int habitId, String name, String hhmm, int weekdays, bool zh) async {
     final parts = hhmm.split(':');
@@ -119,7 +125,6 @@ class NotificationService {
     }
   }
 
-  
   /// 下一次觸發時間。weekday 為 null 代表任何一天
   tz.TZDateTime _nextOccurrence(int hour, int minute, int? weekday) {
     final now = tz.TZDateTime.now(tz.local);
@@ -131,7 +136,7 @@ class NotificationService {
     }
     return when;
   }
-  
+
   Future<void> _scheduleOne({
     required int notifId,
     required int habitId,
@@ -151,8 +156,7 @@ class NotificationService {
           // Android 頻道名稱建立後不會更新，所以中英文用不同的 id
           zh ? 'habit_reminder' : 'habit_reminder_en',
           zh ? '習慣提醒' : 'Habit reminders',
-          channelDescription:
-              zh ? '習慣打卡提醒' : 'Habit check-in reminders',
+          channelDescription: zh ? '習慣打卡提醒' : 'Habit check-in reminders',
           importance: Importance.high,
           priority: Priority.high,
         ),

@@ -28,8 +28,7 @@ class TodayPage extends ConsumerStatefulWidget {
   ConsumerState<TodayPage> createState() => _TodayPageState();
 }
 
-class _TodayPageState extends ConsumerState<TodayPage>
-    with WidgetsBindingObserver {
+class _TodayPageState extends ConsumerState<TodayPage> {
   bool _celebrating = false;
   final _scroll = ScrollController();
   final _offset = ValueNotifier<double>(0);
@@ -44,7 +43,6 @@ class _TodayPageState extends ConsumerState<TodayPage>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _scroll.addListener(() {
       // 淡入淡出切換時,可能短暫有兩個列表共用同一個 controller
       _offset.value =
@@ -54,18 +52,9 @@ class _TodayPageState extends ConsumerState<TodayPage>
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     _scroll.dispose();
     _offset.dispose();
     super.dispose();
-  }
-
-  // App 回到前景時重新載入(處理跨日)
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      ref.read(todayProvider.notifier).refresh();
-    }
   }
 
   /// C1:新增表單從下方升起
